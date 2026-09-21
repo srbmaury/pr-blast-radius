@@ -98,6 +98,7 @@ public class TraceSpanStore {
                           AND scoped.span_id = legacy.span_id
                     )
                     """);
+            jdbcTemplate.execute("DROP TABLE trace_span");
         } catch (DataAccessException ignored) {
             // Fresh installations do not have the pre-tenant table.
         }
