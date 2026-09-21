@@ -353,6 +353,10 @@ public class GitHubPullRequestClient {
                         ? null
                         : appSlug + "[bot]";
 
+        if (expectedLogin == null) {
+            return null;
+        }
+
         for (JsonNode comment : comments) {
             String body = comment.path("body").asText();
             String type = comment
