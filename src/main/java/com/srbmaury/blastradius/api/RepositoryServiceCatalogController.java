@@ -2,7 +2,8 @@ package com.srbmaury.blastradius.api;
 
 import com.srbmaury.blastradius.catalog.RepositoryServiceCatalog;
 import com.srbmaury.blastradius.domain.RepositoryServiceMapping;
-import com.srbmaury.blastradius.tenant.TenantIds;
+import com.srbmaury.blastradius.tenant.TenantAccessResolver;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,11 +24,14 @@ public class RepositoryServiceCatalogController {
     private static final String TENANT_HEADER = "X-Tenant-ID";
 
     private final RepositoryServiceCatalog catalog;
+    private final TenantAccessResolver tenantAccessResolver;
 
     public RepositoryServiceCatalogController(
-            RepositoryServiceCatalog catalog
+            RepositoryServiceCatalog catalog,
+            TenantAccessResolver tenantAccessResolver
     ) {
         this.catalog = catalog;
+        this.tenantAccessResolver = tenantAccessResolver;
     }
 
     @PutMapping("/{owner}/{repo}")
@@ -79,7 +83,10 @@ public class RepositoryServiceCatalogController {
             ) String tenantId
     ) {
         return catalog.all(
-                TenantIds.normalize(tenantId)
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                )
         );
     }
 
@@ -94,7 +101,10 @@ public class RepositoryServiceCatalogController {
             ) String tenantId
     ) {
         catalog.delete(
-                TenantIds.normalize(tenantId),
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                ),
                 owner + "/" + repo
         );
     }
