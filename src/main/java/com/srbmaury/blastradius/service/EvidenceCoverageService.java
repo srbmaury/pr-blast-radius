@@ -55,7 +55,11 @@ public class EvidenceCoverageService {
             List<ImpactFinding> findings
     ) {
         return List.of(
-                postgresCoverage(changeSet, findings),
+                postgresCoverage(
+                        tenantId,
+                        changeSet,
+                        findings
+                ),
                 runtimeCoverage(tenantId, rootService),
                 endpointCoverage(tenantId, changeSet, rootService),
                 tracePathCoverage(tenantId, changeSet, rootService),
@@ -64,9 +68,20 @@ public class EvidenceCoverageService {
     }
 
     private EvidenceCoverage postgresCoverage(
+            String tenantId,
             PullRequestChangeSet changeSet,
             List<ImpactFinding> findings
     ) {
+        if (!TenantIds.DEFAULT.equals(
+                TenantIds.normalize(tenantId)
+        )) {
+            return new EvidenceCoverage(
+                    EvidenceSource.POSTGRES_RUNTIME,
+                    EvidenceStatus.NOT_CONFIGURED,
+                    "Hosted tenant PostgreSQL evidence requires a tenant-specific datasource; the deployment-scoped datasource is not shared across tenants"
+            );
+        }
+
         boolean hasDatabaseChange = changeSet.changes().stream()
                 .anyMatch(change -> change.kind() == ChangeKind.DATABASE_TABLE
                         || change.kind() == ChangeKind.DATABASE_COLUMN);
