@@ -7,7 +7,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class RuntimeImpactService {
@@ -32,36 +34,49 @@ public class RuntimeImpactService {
             );
 
             List<ImpactFinding> findings = new ArrayList<>();
+            Set<String> seenEdges = new HashSet<>();
 
-            radius.callers().forEach(edge -> findings.add(
-                    new ImpactFinding(
-                            edge.sourceService(),
-                            edge.sourceService()
-                                    + " -> "
-                                    + edge.targetService()
-                                    + " (caller path into changed service)",
-                            "runtime calls=" + edge.callCount()
-                                    + ", lastSeen=" + edge.lastSeen(),
-                            ImpactConfidence.CONFIRMED
-                    )
-            ));
+            radius.callers().forEach(edge -> {
+                if (!seenEdges.add(edgeKey(edge.sourceService(), edge.targetService()))) {
+                    return;
+                }
 
-            radius.dependencies().forEach(edge -> findings.add(
-                    new ImpactFinding(
-                            edge.targetService(),
-                            edge.sourceService()
-                                    + " -> "
-                                    + edge.targetService()
-                                    + " (dependency path from changed service)",
-                            "runtime calls=" + edge.callCount()
-                                    + ", lastSeen=" + edge.lastSeen(),
-                            ImpactConfidence.CONFIRMED
-                    )
-            ));
+                findings.add(new ImpactFinding(
+                        edge.sourceService(),
+                        edge.sourceService()
+                                + " -> "
+                                + edge.targetService()
+                                + " (caller path into changed service)",
+                        "runtime calls=" + edge.callCount()
+                                + ", lastSeen=" + edge.lastSeen(),
+                        ImpactConfidence.CONFIRMED
+                ));
+            });
+
+            radius.dependencies().forEach(edge -> {
+                if (!seenEdges.add(edgeKey(edge.sourceService(), edge.targetService()))) {
+                    return;
+                }
+
+                findings.add(new ImpactFinding(
+                        edge.targetService(),
+                        edge.sourceService()
+                                + " -> "
+                                + edge.targetService()
+                                + " (dependency path from changed service)",
+                        "runtime calls=" + edge.callCount()
+                                + ", lastSeen=" + edge.lastSeen(),
+                        ImpactConfidence.CONFIRMED
+                ));
+            });
 
             return List.copyOf(findings);
         } catch (DataAccessException ex) {
             return List.of();
         }
+    }
+
+    private String edgeKey(String sourceService, String targetService) {
+        return sourceService + "\u0000" + targetService;
     }
 }
