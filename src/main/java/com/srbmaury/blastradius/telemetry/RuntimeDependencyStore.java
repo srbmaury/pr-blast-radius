@@ -109,6 +109,24 @@ public class RuntimeDependencyStore {
         );
     }
 
+    public List<RuntimeDependencyEdge> incoming(String targetService) {
+        return jdbcTemplate.query(
+                """
+                SELECT source_service, target_service, call_count, last_seen
+                FROM runtime_dependency_edge
+                WHERE target_service = ?
+                ORDER BY source_service
+                """,
+                (rs, rowNum) -> mapEdge(
+                        rs.getString("source_service"),
+                        rs.getString("target_service"),
+                        rs.getLong("call_count"),
+                        rs.getTimestamp("last_seen")
+                ),
+                targetService
+        );
+    }
+
     public List<RuntimeDependencyEdge> all() {
         return jdbcTemplate.query(
                 """
