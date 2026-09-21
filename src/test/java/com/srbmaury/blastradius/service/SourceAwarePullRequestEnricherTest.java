@@ -5,7 +5,9 @@ import com.srbmaury.blastradius.domain.ChangeOperation;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
 import com.srbmaury.blastradius.domain.PullRequestRevision;
 import com.srbmaury.blastradius.github.GitHubPullRequestClient;
+import com.srbmaury.blastradius.ingestion.FeignClientDefinitionAnalyzer;
 import com.srbmaury.blastradius.ingestion.SpringEndpointOwnershipAnalyzer;
+import com.srbmaury.blastradius.ingestion.StaticOutboundCallAnalyzer;
 import com.srbmaury.blastradius.ingestion.UnifiedDiffLineParser;
 import org.junit.jupiter.api.Test;
 
@@ -52,7 +54,9 @@ class SourceAwarePullRequestEnricherTest {
         var enricher = new SourceAwarePullRequestEnricher(
                 github,
                 new UnifiedDiffLineParser(),
-                new SpringEndpointOwnershipAnalyzer()
+                new SpringEndpointOwnershipAnalyzer(),
+                new StaticOutboundCallAnalyzer(),
+                new FeignClientDefinitionAnalyzer()
         );
 
         var result = enricher.enrich(
@@ -104,7 +108,9 @@ class SourceAwarePullRequestEnricherTest {
         var enricher = new SourceAwarePullRequestEnricher(
                 github,
                 new UnifiedDiffLineParser(),
-                new SpringEndpointOwnershipAnalyzer()
+                new SpringEndpointOwnershipAnalyzer(),
+                new StaticOutboundCallAnalyzer(),
+                new FeignClientDefinitionAnalyzer()
         );
 
         var result = enricher.enrich(
@@ -175,4 +181,110 @@ class SourceAwarePullRequestEnricherTest {
 
         throw new IllegalArgumentException("Line not found: " + needle);
     }
+
+    @Test
+    void resolvesImportedFeignClientIntoStaticOutboundEvidence() {
+        GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
+
+        String source = """
+                package com.acme.orders;
+
+                import com.acme.payments.PaymentClient;
+                import org.springframework.web.bind.annotation.*;
+
+                @RestController
+                @RequestMapping("/orders")
+                class OrderController {
+                    private PaymentClient paymentClient;
+
+                    @PostMapping
+                    Order create(String orderId) {
+                        paymentClient.createPayment(orderId);
+                        return new Order();
+                    }
+                }
+                """;
+
+        String feignSource = """
+                package com.acme.payments;
+
+                import org.springframework.cloud.openfeign.FeignClient;
+                import org.springframework.web.bind.annotation.*;
+
+                @FeignClient(name = "payment-service")
+                interface PaymentClient {
+                    @PostMapping("/payments")
+                    Payment createPayment(String orderId);
+                }
+                """;
+
+        int changedLine = lineOf(
+                source,
+                "paymentClient.createPayment"
+        );
+
+        String diff = """
+                diff --git a/src/main/java/com/acme/orders/OrderController.java b/src/main/java/com/acme/orders/OrderController.java
+                --- a/src/main/java/com/acme/orders/OrderController.java
+                +++ b/src/main/java/com/acme/orders/OrderController.java
+                @@ -%d,1 +%d,1 @@
+                -        legacyPayment(orderId);
+                +        paymentClient.createPayment(orderId);
+                """.formatted(changedLine, changedLine);
+
+        when(github.fetchRevision("acme", "orders", 44))
+                .thenReturn(new PullRequestRevision("base-sha", "head-sha"));
+        when(github.fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/orders/OrderController.java",
+                "base-sha"
+        )).thenReturn(source.replace(
+                "paymentClient.createPayment(orderId);",
+                "legacyPayment(orderId);"
+        ));
+        when(github.fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/orders/OrderController.java",
+                "head-sha"
+        )).thenReturn(source);
+        when(github.fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/payments/PaymentClient.java",
+                "head-sha"
+        )).thenReturn(feignSource);
+
+        var enricher = new SourceAwarePullRequestEnricher(
+                github,
+                new UnifiedDiffLineParser(),
+                new SpringEndpointOwnershipAnalyzer(),
+                new StaticOutboundCallAnalyzer(),
+                new FeignClientDefinitionAnalyzer()
+        );
+
+        var result = enricher.enrich(
+                "acme",
+                "orders",
+                44,
+                diff,
+                new PullRequestChangeSet(
+                        "acme/orders#44",
+                        List.of()
+                )
+        );
+
+        assertThat(result.staticOutboundCalls())
+                .singleElement()
+                .satisfies(call -> {
+                    assertThat(call.targetService())
+                            .isEqualTo("payment-service");
+                    assertThat(call.endpoint())
+                            .isEqualTo("HTTP POST /payments");
+                    assertThat(call.clientKind())
+                            .isEqualTo("OpenFeign");
+                });
+    }
+
 }

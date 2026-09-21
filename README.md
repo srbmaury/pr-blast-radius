@@ -27,6 +27,8 @@ Findings are evidence-based:
 - Java type change detection
 - Spring endpoint mapping change detection (`@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping`, `@RequestMapping`)
 - Source-aware Java AST analysis that maps handler-body/signature changes to their owning Spring endpoint
+- Static outbound API extraction from changed Java methods and same-class helper calls
+- Supported static clients: RestTemplate, RestClient, WebClient, and resolvable Spring Cloud OpenFeign interfaces
 - PostgreSQL table / add / drop / rename column detection
 - Statement-scoped SQL parsing to reduce false positives
 - PostgreSQL runtime query evidence through `pg_stat_statements`
@@ -202,6 +204,11 @@ TRACE_PATH
 - UNAVAILABLE
 - NOT_CONFIGURED
 - NOT_APPLICABLE
+
+STATIC_OUTBOUND
+- AVAILABLE
+- NO_DATA
+- NOT_APPLICABLE
 ```
 
 This prevents a dangerous interpretation of an empty result. If telemetry is missing, the PR report explicitly says that the analysis is incomplete and must not be treated as proof that the change is safe.
@@ -327,11 +334,63 @@ If matching endpoint traces are unavailable, the product falls back to the broad
 
 Trace-path evidence is observational: it proves that a path occurred in retained traces, not that every possible production path was sampled. Parent/child span ancestry is supported in this version; asynchronous producer→consumer causality represented only through span links is not reconstructed yet.
 
+## Static outbound API evidence
+
+Changed Java source is also analyzed for deterministic outbound API dependencies.
+
+Supported patterns currently include:
+
+```java
+restTemplate.postForObject(
+    "http://payment-service/payments",
+    request,
+    Payment.class
+);
+
+restClient.post()
+    .uri("/payments")
+    .retrieve();
+
+webClient.get()
+    .uri("/inventory/{id}")
+    .retrieve();
+
+paymentClient.createPayment(orderId); // resolvable OpenFeign interface
+```
+
+For `RestClient` and `WebClient`, literal base URLs created through `builder().baseUrl(...)` and `create(...)` are supported. `RestTemplate.exchange(..., HttpMethod.X, ...)` is also normalized.
+
+Same-class helper methods are followed recursively. For OpenFeign, imported client interfaces are resolved against the PR head revision when they live under the same standard Java source root. Literal `@FeignClient(name/value/path)` and literal Spring mapping annotations are composed into the same endpoint identity used by telemetry.
+
+Example:
+
+```text
+OrderController#create
+   ↓ static source
+PaymentClient#createPayment
+   ↓
+payment-service [HTTP POST /payments]
+```
+
+Confidence fusion is deterministic:
+
+```text
+trace/runtime confirmed + static match → CONFIRMED
+static only                           → STRONG
+service-topology fallback + static   → STRONG
+service topology only                → POSSIBLE
+```
+
+Static extraction intentionally skips dynamic URIs, property-driven service names, route constants, custom composed annotations, and unresolved client source instead of guessing.
+
+The current static traversal follows the changed method plus same-class helper calls. It does not yet build a repository-wide Java call graph across arbitrary injected service classes.
+
 ## Current limitations
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
 - Repository/service mapping is explicit rather than inferred.
-- Source-aware endpoint ownership currently supports Java/Spring methods with literal mapping paths. Custom composed annotations, path constants, and dynamically constructed mappings are not resolved yet.
+- Source-aware endpoint ownership and static outbound extraction currently require literal route/service values. Custom composed annotations, path constants, property-driven client names, and dynamically constructed URLs are not resolved yet.
+- Static call traversal is intra-class except for resolvable OpenFeign interface definitions; arbitrary cross-class service call chains are not followed yet.
 - Asynchronous messaging causality through OpenTelemetry span links is not reconstructed yet.
 - Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes remain out of scope.
 

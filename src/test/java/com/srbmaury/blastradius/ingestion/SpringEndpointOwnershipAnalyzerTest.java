@@ -107,4 +107,33 @@ class SpringEndpointOwnershipAnalyzerTest {
 
         throw new IllegalArgumentException("Line not found: " + needle);
     }
+
+    @Test
+    void skipsNonLiteralSpringMappingPath() {
+        String source = """
+                import org.springframework.web.bind.annotation.*;
+
+                class OrderController {
+                    static final String PATH = "/orders";
+
+                    @PostMapping(PATH)
+                    void create() {
+                        persist();
+                    }
+
+                    void persist() {}
+                }
+                """;
+
+        int changedLine = lineOf(
+                source,
+                "persist();"
+        );
+
+        assertThat(analyzer.findOwnedEndpoints(
+                source,
+                Set.of(changedLine)
+        )).isEmpty();
+    }
+
 }

@@ -4,6 +4,7 @@ import com.srbmaury.blastradius.domain.ChangeKind;
 import com.srbmaury.blastradius.domain.ChangeOperation;
 import com.srbmaury.blastradius.domain.DetectedChange;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
+import com.srbmaury.blastradius.domain.StaticOutboundCall;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -16,10 +17,21 @@ import static org.mockito.Mockito.when;
 class ImpactAnalysisServiceTest {
 
     @Test
-    void passesChangedEndpointsIntoRuntimeImpactAnalysis() {
+    void passesChangedEndpointsAndStaticCallsIntoImpactAnalysis() {
         DatabaseImpactService database = mock(DatabaseImpactService.class);
         RuntimeImpactService runtime = mock(RuntimeImpactService.class);
-        EvidenceCoverageService coverage = mock(EvidenceCoverageService.class);
+        StaticOutboundImpactService staticOutbound =
+                mock(StaticOutboundImpactService.class);
+        EvidenceCoverageService coverage =
+                mock(EvidenceCoverageService.class);
+
+        var staticCall = new StaticOutboundCall(
+                "OrderController#create",
+                "payment-service",
+                "HTTP POST /payments",
+                "OpenFeign",
+                "paymentClient.createPayment(orderId)"
+        );
 
         var changeSet = new PullRequestChangeSet(
                 "acme/orders#52",
@@ -38,13 +50,18 @@ class ImpactAnalysisServiceTest {
                                 "OrderController.java",
                                 "class OrderController"
                         )
-                )
+                ),
+                List.of(staticCall)
         );
 
         when(database.analyze(changeSet)).thenReturn(List.of());
         when(runtime.analyze(
                 "orders-service",
                 Set.of("HTTP POST /orders")
+        )).thenReturn(List.of());
+        when(staticOutbound.fuse(
+                List.of(),
+                List.of(staticCall)
         )).thenReturn(List.of());
         when(coverage.evaluate(
                 changeSet,
@@ -55,6 +72,7 @@ class ImpactAnalysisServiceTest {
         var service = new ImpactAnalysisService(
                 database,
                 runtime,
+                staticOutbound,
                 coverage
         );
 
@@ -63,6 +81,10 @@ class ImpactAnalysisServiceTest {
         verify(runtime).analyze(
                 "orders-service",
                 Set.of("HTTP POST /orders")
+        );
+        verify(staticOutbound).fuse(
+                List.of(),
+                List.of(staticCall)
         );
     }
 }

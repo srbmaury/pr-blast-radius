@@ -4,5 +4,6 @@ public enum EvidenceSource {
     POSTGRES_RUNTIME,
     SERVICE_RUNTIME,
     ENDPOINT_RUNTIME,
-    TRACE_PATH
+    TRACE_PATH,
+    STATIC_OUTBOUND
 }
