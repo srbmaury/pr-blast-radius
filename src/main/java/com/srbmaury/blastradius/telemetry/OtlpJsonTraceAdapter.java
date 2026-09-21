@@ -71,7 +71,11 @@ public class OtlpJsonTraceAdapter {
                 "http.request.method",
                 "http.method"
         );
-        String httpRoute = findAttribute(attributes, "http.route");
+        String httpRoute = firstAttribute(
+                attributes,
+                "url.template",
+                "http.route"
+        );
 
         if (httpMethod != null && httpRoute != null) {
             return "HTTP "
