@@ -102,6 +102,13 @@ public class StaticOutboundImpactService {
                             .contains(endpointMarker)) {
                 return i;
             }
+
+            if (finding.confidence() == ImpactConfidence.POSSIBLE
+                    && finding.relationship() != null
+                    && finding.relationship()
+                            .contains("service-level fallback")) {
+                return i;
+            }
         }
 
         return -1;
