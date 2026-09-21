@@ -8,7 +8,9 @@ import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
 import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
+import com.srbmaury.blastradius.tenant.TenantAccessResolver;
 import com.srbmaury.blastradius.tenant.TenantIds;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +35,7 @@ public class PullRequestAnalysisController {
     private final ImpactReportFormatter reportFormatter;
     private final RepositoryServiceCatalog serviceCatalog;
     private final SourceAwarePullRequestEnricher sourceAwareEnricher;
+    private final TenantAccessResolver tenantAccessResolver;
 
     public PullRequestAnalysisController(
             GitHubPullRequestClient githubClient,
@@ -40,7 +43,8 @@ public class PullRequestAnalysisController {
             ImpactAnalysisService impactAnalysisService,
             ImpactReportFormatter reportFormatter,
             RepositoryServiceCatalog serviceCatalog,
-            SourceAwarePullRequestEnricher sourceAwareEnricher
+            SourceAwarePullRequestEnricher sourceAwareEnricher,
+            TenantAccessResolver tenantAccessResolver
     ) {
         this.githubClient = githubClient;
         this.diffParser = diffParser;
@@ -48,14 +52,28 @@ public class PullRequestAnalysisController {
         this.reportFormatter = reportFormatter;
         this.serviceCatalog = serviceCatalog;
         this.sourceAwareEnricher = sourceAwareEnricher;
+        this.tenantAccessResolver = tenantAccessResolver;
     }
 
     @GetMapping("/{owner}/{repo}/{number}/changes")
     public PullRequestChangeSet analyzeGitHubPullRequest(
             @PathVariable String owner,
             @PathVariable String repo,
-            @PathVariable long number
+            @PathVariable long number,
+            @RequestHeader(
+                    value = TENANT_HEADER,
+                    required = false
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
+        tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
+
         return analyzeGitHubPullRequestInternal(
                 owner,
                 repo,
@@ -72,9 +90,16 @@ public class PullRequestAnalysisController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
-        String tenant = TenantIds.normalize(tenantId);
+        String tenant = tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
         PullRequestChangeSet changeSet =
                 analyzeGitHubPullRequestInternal(
                         owner,
@@ -104,9 +129,16 @@ public class PullRequestAnalysisController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
-        String tenant = TenantIds.normalize(tenantId);
+        String tenant = tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
         PullRequestChangeSet changeSet =
                 analyzeGitHubPullRequestInternal(
                         owner,
@@ -143,8 +175,20 @@ public class PullRequestAnalysisController {
             consumes = MediaType.TEXT_PLAIN_VALUE
     )
     public PullRequestChangeSet analyzeRawDiff(
-            @RequestBody String diff
+            @RequestBody String diff,
+            @RequestHeader(
+                    value = TENANT_HEADER,
+                    required = false
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
+        tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
         return diffParser.parse("raw-diff", diff);
     }
 
@@ -158,13 +202,21 @@ public class PullRequestAnalysisController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
+        String tenant = tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
         PullRequestChangeSet changeSet =
-                analyzeRawDiff(diff);
+                diffParser.parse("raw-diff", diff);
 
         return impactAnalysisService.analyze(
-                TenantIds.normalize(tenantId),
+                tenant,
                 changeSet,
                 service
         );
