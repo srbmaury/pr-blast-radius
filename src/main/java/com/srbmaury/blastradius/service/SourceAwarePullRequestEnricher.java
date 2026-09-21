@@ -77,7 +77,11 @@ public class SourceAwarePullRequestEnricher {
             sourceAwareChanges.addAll(classifyEndpointChanges(
                     preferredPath(file),
                     baseEndpoints,
-                    headEndpoints
+                    headEndpoints,
+                    isExistingPath(file.oldPath()),
+                    isExistingPath(file.newPath()),
+                    !file.oldChangedLines().isEmpty(),
+                    !file.newChangedLines().isEmpty()
             ));
         }
 
@@ -121,7 +125,11 @@ public class SourceAwarePullRequestEnricher {
     private List<DetectedChange> classifyEndpointChanges(
             String file,
             Map<String, SpringEndpointOwnership> baseEndpoints,
-            Map<String, SpringEndpointOwnership> headEndpoints
+            Map<String, SpringEndpointOwnership> headEndpoints,
+            boolean baseFileExists,
+            boolean headFileExists,
+            boolean baseAnalyzed,
+            boolean headAnalyzed
     ) {
         Set<String> allEndpoints = new LinkedHashSet<>();
         allEndpoints.addAll(baseEndpoints.keySet());
@@ -140,10 +148,14 @@ public class SourceAwarePullRequestEnricher {
                 operation = ChangeOperation.MODIFIED;
                 evidence = head.evidence();
             } else if (head != null) {
-                operation = ChangeOperation.ADDED;
+                operation = baseFileExists && !baseAnalyzed
+                        ? ChangeOperation.MODIFIED
+                        : ChangeOperation.ADDED;
                 evidence = head.evidence();
             } else {
-                operation = ChangeOperation.REMOVED;
+                operation = headFileExists && !headAnalyzed
+                        ? ChangeOperation.MODIFIED
+                        : ChangeOperation.REMOVED;
                 evidence = base.evidence();
             }
 
@@ -170,7 +182,17 @@ public class SourceAwarePullRequestEnricher {
             seen.add(ChangeKey.from(change));
         }
 
+        Set<String> directlyDetectedEndpoints = initial.stream()
+                .filter(change -> change.kind() == ChangeKind.API_ENDPOINT)
+                .map(DetectedChange::identifier)
+                .collect(java.util.stream.Collectors.toSet());
+
         for (DetectedChange change : enrichment) {
+            if (change.kind() == ChangeKind.API_ENDPOINT
+                    && directlyDetectedEndpoints.contains(change.identifier())) {
+                continue;
+            }
+
             if (seen.add(ChangeKey.from(change))) {
                 merged.add(change);
             }
@@ -181,6 +203,10 @@ public class SourceAwarePullRequestEnricher {
 
     private boolean isJavaChange(DiffFileLineChanges file) {
         return isJavaPath(file.oldPath()) || isJavaPath(file.newPath());
+    }
+
+    private boolean isExistingPath(String path) {
+        return path != null && !"/dev/null".equals(path);
     }
 
     private boolean isJavaPath(String path) {
