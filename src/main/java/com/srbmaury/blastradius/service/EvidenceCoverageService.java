@@ -103,7 +103,7 @@ public class EvidenceCoverageService {
             return new EvidenceCoverage(
                     EvidenceSource.ENDPOINT_RUNTIME,
                     EvidenceStatus.NOT_APPLICABLE,
-                    "PR contains no detected Spring endpoint mapping change"
+                    "PR contains no resolved API endpoint change"
             );
         }
 
