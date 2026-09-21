@@ -233,9 +233,7 @@ public class TraceSpanStore {
                   AND span_kind = 'SERVER'
                 """
                 + endpointPredicate
-                + "
-ORDER BY observed_at DESC
-LIMIT ?";
+                + "\nORDER BY observed_at DESC\nLIMIT ?";
 
         List<Object> args = new ArrayList<>();
         args.add(TenantIds.normalize(tenantId));
