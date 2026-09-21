@@ -1,6 +1,9 @@
 spring:
   application:
     name: pr-blast-radius
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/blast_radius}
     username: ${DATABASE_USER:blast_radius}
