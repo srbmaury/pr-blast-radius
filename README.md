@@ -25,12 +25,15 @@ Findings are evidence-based:
 
 - GitHub PR diff ingestion
 - Java type change detection
+- Spring endpoint mapping change detection (`@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping`, `@RequestMapping`)
 - PostgreSQL table / add / drop / rename column detection
 - Statement-scoped SQL parsing to reduce false positives
 - PostgreSQL runtime query evidence through `pg_stat_statements`
 - Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
 - Bidirectional blast radius: callers into the changed service plus dependencies it calls
+- Endpoint-aware caller filtering for changed Spring routes
 - OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
+- Stable endpoint identity from `http.route`, RPC service/method, and messaging destination attributes
 - Persistent runtime dependency edges in a dedicated metadata database
 - TTL-based cleanup of stale runtime edges
 - Persistent repository → runtime service catalog
@@ -89,7 +92,7 @@ Customer PostgreSQL
 
 Product metadata database
         |
-        +--> runtime_dependency_edge
+        +--> runtime_dependency_route_edge
         +--> repository_service_mapping
         +--> retention cleanup
 ```
@@ -124,6 +127,7 @@ Content-Type: text/plain
 POST /api/v1/telemetry/spans
 POST /api/v1/telemetry/otlp-json/v1/traces
 GET  /api/v1/telemetry/blast-radius?service=orders-service&maxDepth=3
+GET  /api/v1/telemetry/blast-radius?service=orders-service&maxDepth=3&endpoint=HTTP%20POST%20/orders
 GET  /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
 GET  /api/v1/telemetry/dependencies
 ```
@@ -176,6 +180,13 @@ SERVICE_RUNTIME
 - NO_DATA
 - UNAVAILABLE
 - NOT_CONFIGURED
+
+ENDPOINT_RUNTIME
+- AVAILABLE
+- NO_DATA
+- UNAVAILABLE
+- NOT_CONFIGURED
+- NOT_APPLICABLE
 ```
 
 This prevents a dangerous interpretation of an empty result. If telemetry is missing, the PR report explicitly says that the analysis is incomplete and must not be treated as proof that the change is safe.
@@ -197,11 +208,45 @@ the runtime blast radius separates:
 
 This is important because callers are often the systems most directly exposed to a changed service contract. Cycles are handled safely and duplicate physical edges are suppressed in impact findings.
 
+## Endpoint-aware caller filtering
+
+When a PR changes a Spring mapping such as:
+
+```java
+@PostMapping("/orders")
+```
+
+the change is normalized to:
+
+```text
+HTTP POST /orders
+```
+
+OpenTelemetry client spans use the same identity when they expose stable route metadata:
+
+```text
+http.request.method = POST
+http.route = /orders
+```
+
+This lets the product distinguish:
+
+```text
+checkout -> orders [HTTP POST /orders]      impacted
+admin    -> orders [HTTP GET /orders/{id}]  unrelated
+```
+
+Filtering is applied only to the **direct caller → changed service** edge. Once a matching caller is identified, its upstream callers are still retained in the blast-radius path.
+
+If route metadata is missing, the product reports `ENDPOINT_RUNTIME = UNAVAILABLE` rather than pretending endpoint-level precision exists.
+
+Endpoint filtering currently activates only when the PR diff itself contains a changed Spring mapping annotation. A handler-body-only change falls back to service-level blast radius.
+
 ## Current limitations
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
 - Repository/service mapping is explicit rather than inferred.
-- Static Java analysis detects changed types but does not yet build a full symbol-level call graph.
+- Static Java analysis detects changed types and changed Spring mapping annotations, but does not yet map arbitrary handler-body changes back to their owning endpoint.
 - Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes remain out of scope.
 
 ## Local development
