@@ -52,7 +52,7 @@ public class GitHubInstallationStore {
         String tenant = TenantIds.normalize(tenantId);
         Instant now = Instant.now();
 
-        Optional<String> existingTenant = findTenant(
+        Optional<String> existingTenant = findAnyTenant(
                 installationId
         );
 
@@ -99,6 +99,22 @@ public class GitHubInstallationStore {
                     Timestamp.from(now)
             );
         }
+    }
+
+
+    private Optional<String> findAnyTenant(
+            long installationId
+    ) {
+        return jdbcTemplate.query(
+                """
+                SELECT tenant_id
+                FROM github_installation
+                WHERE installation_id = ?
+                """,
+                (rs, rowNum) ->
+                        rs.getString("tenant_id"),
+                installationId
+        ).stream().findFirst();
     }
 
     public Optional<String> findTenant(long installationId) {
