@@ -11,7 +11,9 @@ Repository / service catalog
 GitHub PR                       |
    |                            |
    v                            v
-PR Diff Ingestor          service resolution
+PR Diff Ingestor
+   |\
+   +--> Spring endpoint changes          service resolution
    |                            |
    +----------+-----------------+
               |
@@ -31,7 +33,7 @@ OTLP/HTTP JSON traces
         |
         v
  Dedicated metadata database
- + runtime_dependency_edge
+ + runtime_dependency_route_edge
  + repository_service_mapping
         |
         +--> scheduled retention cleanup
@@ -79,7 +81,7 @@ Product-owned metadata lives in the separate metadata datasource:
 
 ## Runtime edge persistence
 
-Each edge stores source service, target service, observed call count, and last-seen timestamp.
+Each edge stores source service, target service, endpoint identity, observed call count, and last-seen timestamp. Endpoint identity is part of the primary key.
 
 Stale edges are deleted according to the configured retention window.
 
@@ -96,6 +98,31 @@ frontend -> checkout -> orders -> payment -> ledger
 ```
 
 Reverse traversal finds services that depend on the changed service. Forward traversal finds dependencies that the changed service invokes. Both directions are depth-limited and cycle-safe.
+
+## Endpoint-aware caller correlation
+
+Spring mapping changes are normalized as endpoint identities such as:
+
+```text
+HTTP POST /orders
+HTTP GET /orders/{id}
+```
+
+OTLP client spans derive the same identity from stable semantic-convention attributes. Runtime storage therefore distinguishes multiple routes between the same two services.
+
+For a changed endpoint, only matching **direct incoming** edges seed caller traversal:
+
+```text
+frontend -> checkout -> orders
+                       ^
+                  HTTP POST /orders
+```
+
+The `checkout -> orders` edge must match the changed endpoint. The upstream `frontend -> checkout` edge does not need to use the same route because it represents a different hop.
+
+Downstream dependencies are intentionally not endpoint-filtered yet. Without trace-path causality, filtering them by the changed inbound route would overstate precision.
+
+Legacy service-only edges migrate to endpoint `*`. Those edges remain useful for service-level topology but are not treated as precise endpoint matches.
 
 ## Evidence model
 
@@ -115,4 +142,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Add repository bootstrap/discovery so a new installation can populate service mappings from configuration or repository metadata without manually calling the catalog API one repository at a time.
+Map arbitrary Java handler-body changes back to their owning Spring endpoint using source-aware parsing instead of relying only on changed mapping annotation lines.
