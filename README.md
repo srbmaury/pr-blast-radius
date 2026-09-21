@@ -42,12 +42,67 @@ Findings are evidence-based:
 - TTL-based cleanup of stale runtime edges
 - Persistent repository → runtime service catalog
 - Tenant-scoped runtime edges, trace lineage, and repository/service mappings
+- Separate hashed tenant API and telemetry-ingestion credentials for hosted mode
 - Automatic service resolution for GitHub PR analysis
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
 - Evidence coverage states for PostgreSQL and runtime-service telemetry
 - Explicit warnings when missing telemetry prevents a trustworthy safety conclusion
+
+## Hosted tenant authentication
+
+Local/backward-compatible mode keeps tenant authentication disabled by default.
+
+Hosted deployments should configure:
+
+```bash
+export TENANT_AUTH_ENABLED=true
+export ADMIN_TOKEN='replace-with-a-long-random-secret'
+```
+
+Provision a tenant through the admin-only endpoint:
+
+```http
+POST /api/v1/admin/tenants
+X-Admin-Token: <admin secret>
+Content-Type: application/json
+
+{
+  "tenantId": "acme"
+}
+```
+
+The response returns two credentials once:
+
+```json
+{
+  "tenantId": "acme",
+  "apiToken": "br_api_...",
+  "ingestToken": "br_ingest_..."
+}
+```
+
+Only SHA-256 hashes are persisted in product metadata. Provisioning the same tenant again rotates both credentials and invalidates the previous pair.
+
+Use the API token for analysis, catalog, and telemetry-read APIs:
+
+```http
+Authorization: Bearer br_api_...
+X-Tenant-ID: acme
+```
+
+Use the separate ingestion token for OTLP/telemetry writes:
+
+```http
+POST /api/v1/telemetry/otlp-json/v1/traces
+Authorization: Bearer br_ingest_...
+X-Tenant-ID: acme
+```
+
+When hosted auth is enabled, the bearer credential determines the tenant. If an `X-Tenant-ID` header is also supplied, it must match the credential or the request is rejected.
+
+The admin provisioning endpoint returns 404 when no `ADMIN_TOKEN` is configured so it is not accidentally exposed in an unconfigured deployment.
 
 ## Tenant isolation
 
