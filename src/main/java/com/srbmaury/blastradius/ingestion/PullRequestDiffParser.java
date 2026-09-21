@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,6 +23,31 @@ public class PullRequestDiffParser {
 
     private static final Pattern JAVA_TYPE =
             Pattern.compile("\\b(class|interface|record|enum)\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\b");
+
+    private static final Pattern SPRING_SHORT_MAPPING =
+            Pattern.compile(
+                    "@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)"
+                            + "\\s*(?:\\((.*)\\))?"
+            );
+
+    private static final Pattern SPRING_REQUEST_MAPPING =
+            Pattern.compile("@RequestMapping\\s*\\((.*)\\)");
+
+    private static final Pattern MAPPING_PATH =
+            Pattern.compile(
+                    "(?:^|\\b(?:value|path)\\s*=\\s*)\\{?\\s*\"([^\"]+)\""
+            );
+
+    private static final Pattern REQUEST_METHOD =
+            Pattern.compile("RequestMethod\\.([A-Z]+)");
+
+    private static final Map<String, String> SHORT_MAPPING_METHODS = Map.of(
+            "GetMapping", "GET",
+            "PostMapping", "POST",
+            "PutMapping", "PUT",
+            "DeleteMapping", "DELETE",
+            "PatchMapping", "PATCH"
+    );
 
     private static final Pattern ALTER_TABLE =
             Pattern.compile("(?i)\\bALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?([A-Za-z0-9_.$\"]+)");
@@ -73,6 +100,7 @@ public class PullRequestDiffParser {
 
                 if (currentFile.endsWith(".java")) {
                     detectJavaType(currentFile, content, operation, changes);
+                    detectSpringEndpoint(currentFile, content, operation, changes);
                 }
 
                 if (isSqlFile(currentFile)) {
@@ -104,6 +132,69 @@ public class PullRequestDiffParser {
                     content
             ));
         }
+    }
+
+    private void detectSpringEndpoint(
+            String file,
+            String content,
+            ChangeOperation operation,
+            Set<DetectedChange> changes
+    ) {
+        Matcher shortMapping = SPRING_SHORT_MAPPING.matcher(content);
+        if (shortMapping.find()) {
+            String method = SHORT_MAPPING_METHODS.get(shortMapping.group(1));
+            String path = extractMappingPath(shortMapping.group(2));
+
+            if (path != null) {
+                changes.add(new DetectedChange(
+                        ChangeKind.API_ENDPOINT,
+                        operation,
+                        "HTTP " + method + " " + normalizeRoute(path),
+                        file,
+                        content
+                ));
+            }
+            return;
+        }
+
+        Matcher requestMapping = SPRING_REQUEST_MAPPING.matcher(content);
+        if (!requestMapping.find()) {
+            return;
+        }
+
+        String arguments = requestMapping.group(1);
+        Matcher methodMatcher = REQUEST_METHOD.matcher(arguments);
+        String path = extractMappingPath(arguments);
+
+        if (methodMatcher.find() && path != null) {
+            changes.add(new DetectedChange(
+                    ChangeKind.API_ENDPOINT,
+                    operation,
+                    "HTTP "
+                            + methodMatcher.group(1).toUpperCase(Locale.ROOT)
+                            + " "
+                            + normalizeRoute(path),
+                    file,
+                    content
+            ));
+        }
+    }
+
+    private String extractMappingPath(String arguments) {
+        if (arguments == null || arguments.isBlank()) {
+            return null;
+        }
+
+        Matcher pathMatcher = MAPPING_PATH.matcher(arguments.trim());
+        return pathMatcher.find() ? pathMatcher.group(1) : null;
+    }
+
+    private String normalizeRoute(String route) {
+        String normalized = route == null ? "/" : route.trim();
+        if (normalized.isBlank()) {
+            return "/";
+        }
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
     }
 
     private void flushSqlChanges(
