@@ -42,15 +42,24 @@ public class RepositoryServiceCatalogController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
-        String tenant = TenantIds.normalize(tenantId);
+        String tenant = tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
         String repository = owner + "/" + repo;
+
         catalog.put(
                 tenant,
                 repository,
                 request.service()
         );
+
         return catalog.find(tenant, repository)
                 .orElseThrow();
     }
@@ -62,9 +71,17 @@ public class RepositoryServiceCatalogController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
-        String tenant = TenantIds.normalize(tenantId);
+        String tenant = tenantAccessResolver.resolveApiTenant(
+                authorization,
+                tenantId
+        );
+
         return catalog.find(
                         tenant,
                         owner + "/" + repo
@@ -80,7 +97,11 @@ public class RepositoryServiceCatalogController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         return catalog.all(
                 tenantAccessResolver.resolveApiTenant(
@@ -98,7 +119,11 @@ public class RepositoryServiceCatalogController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         catalog.delete(
                 tenantAccessResolver.resolveApiTenant(
