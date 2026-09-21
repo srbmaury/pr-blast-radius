@@ -10,6 +10,7 @@ const state = {
 };
 
 let toastTimer;
+let githubPollTimer;
 const byId = (id) => document.getElementById(id);
 
 function authHeaders(extra) {
@@ -185,6 +186,7 @@ async function connectGitHub() {
     if (popup) {
       popup.location.replace(result.installUrl);
       popup.focus();
+      startGitHubPolling();
     } else {
       window.location.assign(result.installUrl);
     }
@@ -194,6 +196,58 @@ async function connectGitHub() {
   } finally {
     setButtonBusy(button, false);
   }
+}
+
+
+function startGitHubPolling() {
+  window.clearInterval(githubPollTimer);
+
+  let attempts = 0;
+  githubPollTimer = window.setInterval(async () => {
+    attempts += 1;
+
+    try {
+      const installations = await api(
+        "/api/v1/onboarding/github/installations"
+      );
+
+      state.installations = Array.isArray(installations)
+        ? installations
+        : [];
+      renderInstallations();
+
+      const candidates = await api(
+        "/api/v1/onboarding/github/installations/candidates"
+      );
+      const candidateList = Array.isArray(candidates)
+        ? candidates
+        : [];
+
+      renderCandidates(candidateList);
+      updateOverview();
+
+      if (state.installations.some(
+        (item) => String(item.status || "").toUpperCase() === "ACTIVE"
+      )) {
+        window.clearInterval(githubPollTimer);
+        showToast("GitHub connected.");
+        return;
+      }
+
+      if (candidateList.length > 0) {
+        window.clearInterval(githubPollTimer);
+        showToast("Choose which verified GitHub installation to use.");
+        return;
+      }
+    } catch {
+      // The install may still be in progress. The normal workspace
+      // refresh path will surface persistent API errors.
+    }
+
+    if (attempts >= 60) {
+      window.clearInterval(githubPollTimer);
+    }
+  }, 2000);
 }
 
 async function loadCandidates() {
@@ -607,6 +661,8 @@ function bindEvents() {
       showToast("GitHub callback tenant did not match this workspace.", true);
       return;
     }
+
+    window.clearInterval(githubPollTimer);
 
     if (message.status === "select") {
       await loadCandidates();
