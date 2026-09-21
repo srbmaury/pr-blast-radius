@@ -9,7 +9,6 @@ import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
 import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
 import com.srbmaury.blastradius.tenant.TenantAccessResolver;
-import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
