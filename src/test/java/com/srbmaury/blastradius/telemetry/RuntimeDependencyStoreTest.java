@@ -158,4 +158,52 @@ class RuntimeDependencyStoreTest {
         });
     }
 
+
+    @Test
+    void isolatesIdenticalServiceNamesAcrossTenants() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        var store = new RuntimeDependencyStore(jdbcTemplate);
+        store.initialize();
+
+        Instant observedAt = Instant.parse("2026-09-21T10:00:00Z");
+
+        store.record(
+                "tenant-a",
+                "orders-service",
+                "payment-service",
+                "HTTP POST /payments",
+                observedAt
+        );
+        store.record(
+                "tenant-b",
+                "orders-service",
+                "inventory-service",
+                "HTTP GET /inventory/{id}",
+                observedAt
+        );
+
+        assertThat(store.outgoing(
+                "tenant-a",
+                "orders-service"
+        )).singleElement().satisfies(edge ->
+                assertThat(edge.targetService())
+                        .isEqualTo("payment-service")
+        );
+
+        assertThat(store.outgoing(
+                "tenant-b",
+                "orders-service"
+        )).singleElement().satisfies(edge ->
+                assertThat(edge.targetService())
+                        .isEqualTo("inventory-service")
+        );
+    }
+
 }
