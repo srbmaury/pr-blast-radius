@@ -185,6 +185,11 @@ public class FeignClientDefinitionAnalyzer {
         List<String> feignPaths = feignClientPaths(type);
         List<String> requestPaths = requestMappingPaths(type);
 
+        if (feignPaths.isEmpty()
+                || requestPaths.isEmpty()) {
+            return List.of();
+        }
+
         List<String> combined = new ArrayList<>();
 
         for (String feignPath : feignPaths) {
@@ -196,9 +201,7 @@ public class FeignClientDefinitionAnalyzer {
             }
         }
 
-        return combined.isEmpty()
-                ? List.of("/")
-                : List.copyOf(combined);
+        return List.copyOf(combined);
     }
 
     private List<String> feignClientPaths(
