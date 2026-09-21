@@ -65,6 +65,8 @@ public class RuntimeDependencyStore {
                           AND route_edge.endpoint = '*'
                     )
                     """);
+
+            jdbcTemplate.execute("DROP TABLE runtime_dependency_edge");
         } catch (DataAccessException ignored) {
             // Fresh installations do not have the legacy table.
         }
