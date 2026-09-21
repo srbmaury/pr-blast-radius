@@ -6,6 +6,7 @@ import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
 import com.srbmaury.blastradius.domain.TraceCausalEdge;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
 import com.srbmaury.blastradius.telemetry.TraceCausalityService;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -31,10 +32,26 @@ public class RuntimeImpactService {
     }
 
     public List<ImpactFinding> analyze(String rootService) {
-        return analyze(rootService, Set.of());
+        return analyze(
+                TenantIds.DEFAULT,
+                rootService,
+                Set.of()
+        );
     }
 
     public List<ImpactFinding> analyze(
+            String rootService,
+            Set<String> changedEndpoints
+    ) {
+        return analyze(
+                TenantIds.DEFAULT,
+                rootService,
+                changedEndpoints
+        );
+    }
+
+    public List<ImpactFinding> analyze(
+            String tenantId,
             String rootService,
             Set<String> changedEndpoints
     ) {
@@ -44,12 +61,14 @@ public class RuntimeImpactService {
 
         try {
             var radius = dependencyService.blastRadius(
+                    tenantId,
                     rootService,
                     DEFAULT_MAX_DEPTH,
                     changedEndpoints
             );
 
             var traceCausality = traceCausalityService.analyze(
+                    tenantId,
                     rootService,
                     changedEndpoints
             );
