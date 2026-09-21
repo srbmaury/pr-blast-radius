@@ -34,6 +34,14 @@ class OtlpJsonTraceAdapterTest {
                                 {
                                   "key": "peer.service",
                                   "value": {"stringValue": "payment-service"}
+                                },
+                                {
+                                  "key": "http.request.method",
+                                  "value": {"stringValue": "POST"}
+                                },
+                                {
+                                  "key": "http.route",
+                                  "value": {"stringValue": "/payments/{id}"}
                                 }
                               ]
                             }
@@ -50,6 +58,7 @@ class OtlpJsonTraceAdapterTest {
         assertThat(observations).singleElement().satisfies(observation -> {
             assertThat(observation.sourceService()).isEqualTo("orders-service");
             assertThat(observation.targetService()).isEqualTo("payment-service");
+            assertThat(observation.endpoint()).isEqualTo("HTTP POST /payments/{id}");
             assertThat(observation.spanKind()).isEqualTo("CLIENT");
         });
     }
@@ -104,4 +113,59 @@ class OtlpJsonTraceAdapterTest {
             assertThat(observation.spanKind()).isEqualTo("PRODUCER");
         });
     }
+
+    @Test
+    void extractsRpcEndpointIdentity() throws Exception {
+        var payload = objectMapper.readTree("""
+                {
+                  "resourceSpans": [
+                    {
+                      "resource": {
+                        "attributes": [
+                          {
+                            "key": "service.name",
+                            "value": {"stringValue": "orders-service"}
+                          }
+                        ]
+                      },
+                      "scopeSpans": [
+                        {
+                          "spans": [
+                            {
+                              "kind": "SPAN_KIND_CLIENT",
+                              "attributes": [
+                                {
+                                  "key": "peer.service",
+                                  "value": {"stringValue": "payments-rpc"}
+                                },
+                                {
+                                  "key": "rpc.system",
+                                  "value": {"stringValue": "grpc"}
+                                },
+                                {
+                                  "key": "rpc.service",
+                                  "value": {"stringValue": "PaymentService"}
+                                },
+                                {
+                                  "key": "rpc.method",
+                                  "value": {"stringValue": "CreatePayment"}
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+        assertThat(adapter.extract(payload))
+                .singleElement()
+                .satisfies(observation ->
+                        assertThat(observation.endpoint())
+                                .isEqualTo("RPC grpc PaymentService/CreatePayment")
+                );
+    }
+
 }
