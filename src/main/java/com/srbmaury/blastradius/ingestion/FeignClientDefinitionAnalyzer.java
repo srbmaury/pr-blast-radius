@@ -201,15 +201,13 @@ public class FeignClientDefinitionAnalyzer {
         }
 
         if (annotation.isSingleMemberAnnotationExpr()) {
-            List<String> paths = literalStrings(
+            return literalStrings(
                     annotation.asSingleMemberAnnotationExpr()
                             .getMemberValue()
             );
-
-            return paths.isEmpty()
-                    ? List.of("/")
-                    : paths;
         }
+
+        boolean pathPropertySeen = false;
 
         for (String property : List.of("path", "value")) {
             for (MemberValuePair pair :
@@ -218,6 +216,7 @@ public class FeignClientDefinitionAnalyzer {
                     continue;
                 }
 
+                pathPropertySeen = true;
                 List<String> values = literalStrings(
                         pair.getValue()
                 );
@@ -228,7 +227,9 @@ public class FeignClientDefinitionAnalyzer {
             }
         }
 
-        return List.of("/");
+        return pathPropertySeen
+                ? List.of()
+                : List.of("/");
     }
 
     private List<String> requestMethods(
