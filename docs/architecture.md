@@ -75,6 +75,31 @@ OTLP/HTTP JSON traces
                                        GitHub PR comment
 ```
 
+## Tenant authentication
+
+Hosted tenant identity is derived from bearer credentials rather than trusted directly from a caller-supplied tenant header.
+
+```text
+admin secret
+   ↓
+tenant provisioning
+   ↓
+┌──────────────────────┬─────────────────────────┐
+│ API token            │ ingestion token         │
+│ analysis/catalog     │ OTLP/span writes        │
+└──────────────────────┴─────────────────────────┘
+           ↓
+      SHA-256 only
+           ↓
+   tenant_credential
+```
+
+The plaintext credentials are returned only when issued. The metadata database stores their hashes.
+
+If hosted authentication is enabled, the API token and ingestion token are intentionally not interchangeable. A supplied tenant header is treated as an assertion that must match the tenant resolved from the credential.
+
+Authentication can remain disabled for local development and existing single-tenant deployments; in that mode the existing `X-Tenant-ID` / `default` behavior is preserved.
+
 ## Tenant boundary
 
 Hosted metadata is explicitly partitioned by tenant:
