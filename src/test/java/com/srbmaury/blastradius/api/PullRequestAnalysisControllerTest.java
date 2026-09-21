@@ -8,6 +8,7 @@ import com.srbmaury.blastradius.github.GitHubPullRequestClient;
 import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
+import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -29,6 +30,7 @@ class PullRequestAnalysisControllerTest {
         ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
         ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
         RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
+        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
 
         var changeSet = new PullRequestChangeSet("acme/orders#42", List.of());
         var expected = new ImpactAnalysisResponse(changeSet, List.of());
