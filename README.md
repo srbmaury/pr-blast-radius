@@ -26,6 +26,7 @@ Findings are evidence-based:
 - GitHub PR diff ingestion
 - Java type change detection
 - Spring endpoint mapping change detection (`@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping`, `@RequestMapping`)
+- Source-aware Java AST analysis that maps handler-body/signature changes to their owning Spring endpoint
 - PostgreSQL table / add / drop / rename column detection
 - Statement-scoped SQL parsing to reduce false positives
 - PostgreSQL runtime query evidence through `pg_stat_statements`
@@ -240,13 +241,49 @@ Filtering is applied only to the **direct caller → changed service** edge. Onc
 
 If route metadata is missing, the product reports `ENDPOINT_RUNTIME = UNAVAILABLE` rather than pretending endpoint-level precision exists.
 
-Endpoint filtering currently activates only when the PR diff itself contains a changed Spring mapping annotation. A handler-body-only change falls back to service-level blast radius.
+Endpoint filtering also activates for handler-body and method-signature changes. For GitHub PRs, the analyzer:
+
+```text
+unified diff
+   ↓
+old/new changed line numbers
+   ↓
+fetch base + head Java source
+   ↓
+JavaParser AST
+   ↓
+enclosing Spring handler method
+   ↓
+class mapping + method mapping
+   ↓
+HTTP METHOD /route
+```
+
+For example:
+
+```java
+@RequestMapping("/orders")
+class OrderController {
+    @PostMapping
+    Order create(OrderRequest request) {
+        return service.create(request); // changed line
+    }
+}
+```
+
+is resolved to:
+
+```text
+HTTP POST /orders
+```
+
+The analyzer checks both the PR base and head revisions, so replacement edits and deletion-only body changes still map to the endpoint.
 
 ## Current limitations
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
 - Repository/service mapping is explicit rather than inferred.
-- Static Java analysis detects changed types and changed Spring mapping annotations, but does not yet map arbitrary handler-body changes back to their owning endpoint.
+- Source-aware endpoint ownership currently supports Java/Spring methods with literal mapping paths. Custom composed annotations, path constants, and dynamically constructed mappings are not resolved yet.
 - Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes remain out of scope.
 
 ## Local development
@@ -256,6 +293,8 @@ Requirements:
 - Java 21+
 - Maven 3.9+
 - PostgreSQL
+
+Source-aware endpoint ownership uses JavaParser 3.28.2 with Java 21 parsing enabled.
 
 ```bash
 mvn spring-boot:run
