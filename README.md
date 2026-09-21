@@ -21,32 +21,47 @@ Findings are evidence-based, not opaque risk scores:
 - **STRONG** — direct static/code/schema dependency
 - **POSSIBLE** — inferred relationship that needs review
 
-## Target output
+## Implemented
+
+- GitHub PR diff ingestion
+- Java type change detection
+- PostgreSQL migration detection for table / add / drop / rename column changes
+- Runtime PostgreSQL query evidence through `pg_stat_statements`
+- Evidence-based `CONFIRMED` findings
+- Unit tests for parser precision and runtime DB evidence
+
+## API
+
+Analyze only the structural changes in a PR:
 
 ```text
-PR #421 — Change Impact
-
-Changed:
-orders.status
-
-Direct code references:
-- OrderService
-- RefundService
-
-Runtime dependencies:
-- checkout -> orders-service
-- refund-worker -> orders-service
-
-Database usage:
-- orders.status read 18,240 times / 24h
-- last production read: 3 min ago
-
-Confidence: CONFIRMED
+GET /api/v1/pr/{owner}/{repo}/{number}/changes
 ```
 
-## MVP architecture
+Analyze changes plus PostgreSQL runtime evidence:
 
-See [docs/architecture.md](docs/architecture.md).
+```text
+GET /api/v1/pr/{owner}/{repo}/{number}/impact
+```
+
+You can also POST a raw unified diff to:
+
+```text
+POST /api/v1/pr/diff/changes
+POST /api/v1/pr/diff/impact
+Content-Type: text/plain
+```
+
+## Configuration
+
+```bash
+export GITHUB_TOKEN=...
+export DATABASE_URL=jdbc:postgresql://localhost:5432/blast_radius
+export DATABASE_USER=blast_radius
+export DATABASE_PASSWORD=blast_radius
+```
+
+For runtime SQL evidence, the connected PostgreSQL instance must expose `pg_stat_statements`. If it is unavailable, the service returns no runtime DB evidence instead of inferring usage.
 
 ## Local development
 
@@ -65,6 +80,8 @@ Health endpoint:
 ```text
 GET /actuator/health
 ```
+
+See [docs/architecture.md](docs/architecture.md) for the MVP architecture.
 
 ## Scope discipline
 
