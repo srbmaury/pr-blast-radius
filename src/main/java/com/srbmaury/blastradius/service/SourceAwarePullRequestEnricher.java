@@ -60,6 +60,24 @@ public class SourceAwarePullRequestEnricher {
             String diff,
             PullRequestChangeSet initial
     ) {
+        return enrich(
+                owner,
+                repository,
+                pullRequestNumber,
+                diff,
+                initial,
+                null
+        );
+    }
+
+    public PullRequestChangeSet enrich(
+            String owner,
+            String repository,
+            long pullRequestNumber,
+            String diff,
+            PullRequestChangeSet initial,
+            String githubAccessToken
+    ) {
         List<DiffFileLineChanges> javaFiles = diffLineParser.parse(diff)
                 .stream()
                 .filter(this::isJavaChange)
@@ -69,10 +87,11 @@ public class SourceAwarePullRequestEnricher {
             return initial;
         }
 
-        PullRequestRevision revision = githubClient.fetchRevision(
+        PullRequestRevision revision = fetchRevision(
                 owner,
                 repository,
-                pullRequestNumber
+                pullRequestNumber,
+                githubAccessToken
         );
 
         List<DetectedChange> sourceAwareChanges = new ArrayList<>();
@@ -85,7 +104,8 @@ public class SourceAwarePullRequestEnricher {
                     repository,
                     file.oldPath(),
                     revision.baseSha(),
-                    file.oldChangedLines()
+                    file.oldChangedLines(),
+                    githubAccessToken
             );
 
             String headSource = fetchSource(
@@ -93,7 +113,8 @@ public class SourceAwarePullRequestEnricher {
                     repository,
                     file.newPath(),
                     revision.headSha(),
-                    file.newChangedLines()
+                    file.newChangedLines(),
+                    githubAccessToken
             );
 
             Map<String, SpringEndpointOwnership> baseEndpoints =
@@ -141,7 +162,8 @@ public class SourceAwarePullRequestEnricher {
                         file.newPath(),
                         headSource,
                         revision.headSha(),
-                        invocation
+                        invocation,
+                        githubAccessToken
                 ).ifPresent(staticOutboundCalls::add);
             }
         }
@@ -161,7 +183,8 @@ public class SourceAwarePullRequestEnricher {
             String repository,
             String path,
             String ref,
-            Set<Integer> changedLines
+            Set<Integer> changedLines,
+            String githubAccessToken
     ) {
         if (!isExistingPath(path)
                 || changedLines == null
@@ -169,11 +192,62 @@ public class SourceAwarePullRequestEnricher {
             return null;
         }
 
+        return fetchFileContent(
+                owner,
+                repository,
+                path,
+                ref,
+                githubAccessToken
+        );
+    }
+
+
+    private PullRequestRevision fetchRevision(
+            String owner,
+            String repository,
+            long pullRequestNumber,
+            String githubAccessToken
+    ) {
+        if (githubAccessToken == null
+                || githubAccessToken.isBlank()) {
+            return githubClient.fetchRevision(
+                    owner,
+                    repository,
+                    pullRequestNumber
+            );
+        }
+
+        return githubClient.fetchRevision(
+                owner,
+                repository,
+                pullRequestNumber,
+                githubAccessToken
+        );
+    }
+
+    private String fetchFileContent(
+            String owner,
+            String repository,
+            String path,
+            String ref,
+            String githubAccessToken
+    ) {
+        if (githubAccessToken == null
+                || githubAccessToken.isBlank()) {
+            return githubClient.fetchFileContent(
+                    owner,
+                    repository,
+                    path,
+                    ref
+            );
+        }
+
         return githubClient.fetchFileContent(
                 owner,
                 repository,
                 path,
-                ref
+                ref,
+                githubAccessToken
         );
     }
 
@@ -210,7 +284,8 @@ public class SourceAwarePullRequestEnricher {
             String currentPath,
             String currentSource,
             String headSha,
-            FeignInvocation invocation
+            FeignInvocation invocation,
+            String githubAccessToken
     ) {
         String clientPath = sourcePathForType(
                 currentPath,
@@ -223,11 +298,12 @@ public class SourceAwarePullRequestEnricher {
         }
 
         try {
-            String clientSource = githubClient.fetchFileContent(
+            String clientSource = fetchFileContent(
                     owner,
                     repository,
                     clientPath,
-                    headSha
+                    headSha,
+                    githubAccessToken
             );
 
             return feignAnalyzer.resolve(
