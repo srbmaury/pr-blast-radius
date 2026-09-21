@@ -54,7 +54,9 @@ class SourceAwarePullRequestEnricherTest {
         var enricher = new SourceAwarePullRequestEnricher(
                 github,
                 new UnifiedDiffLineParser(),
-                new SpringEndpointOwnershipAnalyzer()
+                new SpringEndpointOwnershipAnalyzer(),
+                new StaticOutboundCallAnalyzer(),
+                new FeignClientDefinitionAnalyzer()
         );
 
         var result = enricher.enrich(
@@ -106,7 +108,9 @@ class SourceAwarePullRequestEnricherTest {
         var enricher = new SourceAwarePullRequestEnricher(
                 github,
                 new UnifiedDiffLineParser(),
-                new SpringEndpointOwnershipAnalyzer()
+                new SpringEndpointOwnershipAnalyzer(),
+                new StaticOutboundCallAnalyzer(),
+                new FeignClientDefinitionAnalyzer()
         );
 
         var result = enricher.enrich(
