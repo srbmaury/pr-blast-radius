@@ -154,11 +154,14 @@ public class SpringEndpointOwnershipAnalyzer {
             List<String> paths = stringValues(
                     annotation.asSingleMemberAnnotationExpr().getMemberValue()
             );
-            return paths.isEmpty() ? List.of("/") : normalizePaths(paths);
+            return paths.isEmpty()
+                    ? List.of()
+                    : normalizePaths(paths);
         }
 
         NodeList<MemberValuePair> pairs =
                 annotation.asNormalAnnotationExpr().getPairs();
+        boolean pathPropertySeen = false;
 
         for (String property : List.of("path", "value")) {
             for (MemberValuePair pair : pairs) {
@@ -166,6 +169,7 @@ public class SpringEndpointOwnershipAnalyzer {
                     continue;
                 }
 
+                pathPropertySeen = true;
                 List<String> paths = stringValues(pair.getValue());
                 if (!paths.isEmpty()) {
                     return normalizePaths(paths);
@@ -173,7 +177,9 @@ public class SpringEndpointOwnershipAnalyzer {
             }
         }
 
-        return List.of("/");
+        return pathPropertySeen
+                ? List.of()
+                : List.of("/");
     }
 
     private List<String> requestMethods(AnnotationExpr annotation) {
