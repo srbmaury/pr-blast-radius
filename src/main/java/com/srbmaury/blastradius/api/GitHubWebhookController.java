@@ -1,5 +1,6 @@
 package com.srbmaury.blastradius.api;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.srbmaury.blastradius.domain.GitHubWebhookResult;
@@ -55,23 +56,21 @@ public class GitHubWebhookController {
             );
         }
 
+        final JsonNode body;
         try {
-            JsonNode body =
-                    objectMapper.readTree(payload);
-
-            return webhookService.handle(
-                    deliveryId,
-                    eventName,
-                    body
-            );
-        } catch (ResponseStatusException ex) {
-            throw ex;
-        } catch (Exception ex) {
+            body = objectMapper.readTree(payload);
+        } catch (JsonProcessingException ex) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Invalid GitHub webhook payload",
                     ex
             );
         }
+
+        return webhookService.handle(
+                deliveryId,
+                eventName,
+                body
+        );
     }
 }
