@@ -61,6 +61,9 @@ public class RepositoryServiceCatalog {
                           AND scoped.repository = legacy.repository
                     )
                     """);
+            jdbcTemplate.execute(
+                    "DROP TABLE repository_service_mapping"
+            );
         } catch (DataAccessException ignored) {
             // Fresh installations do not have the pre-tenant table.
         }
