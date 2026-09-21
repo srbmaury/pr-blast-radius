@@ -7,6 +7,7 @@ import com.srbmaury.blastradius.github.GitHubPullRequestClient;
 import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
+import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,19 +28,22 @@ public class PullRequestAnalysisController {
     private final ImpactAnalysisService impactAnalysisService;
     private final ImpactReportFormatter reportFormatter;
     private final RepositoryServiceCatalog serviceCatalog;
+    private final SourceAwarePullRequestEnricher sourceAwareEnricher;
 
     public PullRequestAnalysisController(
             GitHubPullRequestClient githubClient,
             PullRequestDiffParser diffParser,
             ImpactAnalysisService impactAnalysisService,
             ImpactReportFormatter reportFormatter,
-            RepositoryServiceCatalog serviceCatalog
+            RepositoryServiceCatalog serviceCatalog,
+            SourceAwarePullRequestEnricher sourceAwareEnricher
     ) {
         this.githubClient = githubClient;
         this.diffParser = diffParser;
         this.impactAnalysisService = impactAnalysisService;
         this.reportFormatter = reportFormatter;
         this.serviceCatalog = serviceCatalog;
+        this.sourceAwareEnricher = sourceAwareEnricher;
     }
 
     @GetMapping("/{owner}/{repo}/{number}/changes")
@@ -52,7 +56,18 @@ public class PullRequestAnalysisController {
         validateRepositoryPart(repo);
 
         String diff = githubClient.fetchDiff(owner, repo, number);
-        return diffParser.parse(owner + "/" + repo + "#" + number, diff);
+        PullRequestChangeSet initial = diffParser.parse(
+                owner + "/" + repo + "#" + number,
+                diff
+        );
+
+        return sourceAwareEnricher.enrich(
+                owner,
+                repo,
+                number,
+                diff,
+                initial
+        );
     }
 
     @GetMapping("/{owner}/{repo}/{number}/impact")
