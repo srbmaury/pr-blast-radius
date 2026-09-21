@@ -32,11 +32,19 @@ class PullRequestAnalysisControllerTest {
         RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
         SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
 
-        var changeSet = new PullRequestChangeSet("acme/orders#42", List.of());
-        var expected = new ImpactAnalysisResponse(changeSet, List.of());
+        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
+        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
+        var expected = new ImpactAnalysisResponse(enriched, List.of());
 
         when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
-        when(parser.parse("acme/orders#42", "diff")).thenReturn(changeSet);
+        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
+        when(enricher.enrich(
+                "acme",
+                "orders",
+                42,
+                "diff",
+                initial
+        )).thenReturn(enriched);
         when(catalog.find("acme/orders")).thenReturn(Optional.of(
                 new RepositoryServiceMapping(
                         "acme/orders",
@@ -44,14 +52,15 @@ class PullRequestAnalysisControllerTest {
                         Instant.now()
                 )
         ));
-        when(analysis.analyze(changeSet, "orders-service")).thenReturn(expected);
+        when(analysis.analyze(enriched, "orders-service")).thenReturn(expected);
 
         var controller = new PullRequestAnalysisController(
                 github,
                 parser,
                 analysis,
                 formatter,
-                catalog
+                catalog,
+                enricher
         );
 
         assertThat(controller.analyzeGitHubPullRequestImpact(
@@ -61,7 +70,7 @@ class PullRequestAnalysisControllerTest {
                 null
         )).isSameAs(expected);
 
-        verify(analysis).analyze(changeSet, "orders-service");
+        verify(analysis).analyze(enriched, "orders-service");
     }
 
     @Test
@@ -71,20 +80,30 @@ class PullRequestAnalysisControllerTest {
         ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
         ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
         RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
+        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
 
-        var changeSet = new PullRequestChangeSet("acme/orders#42", List.of());
-        var expected = new ImpactAnalysisResponse(changeSet, List.of());
+        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
+        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
+        var expected = new ImpactAnalysisResponse(enriched, List.of());
 
         when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
-        when(parser.parse("acme/orders#42", "diff")).thenReturn(changeSet);
-        when(analysis.analyze(changeSet, "manual-service")).thenReturn(expected);
+        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
+        when(enricher.enrich(
+                "acme",
+                "orders",
+                42,
+                "diff",
+                initial
+        )).thenReturn(enriched);
+        when(analysis.analyze(enriched, "manual-service")).thenReturn(expected);
 
         var controller = new PullRequestAnalysisController(
                 github,
                 parser,
                 analysis,
                 formatter,
-                catalog
+                catalog,
+                enricher
         );
 
         assertThat(controller.analyzeGitHubPullRequestImpact(
@@ -94,7 +113,7 @@ class PullRequestAnalysisControllerTest {
                 "manual-service"
         )).isSameAs(expected);
 
-        verify(analysis).analyze(changeSet, "manual-service");
+        verify(analysis).analyze(enriched, "manual-service");
         verifyNoInteractions(catalog);
     }
 }
