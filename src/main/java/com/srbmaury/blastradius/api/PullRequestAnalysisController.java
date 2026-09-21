@@ -1,5 +1,6 @@
 package com.srbmaury.blastradius.api;
 
+import com.srbmaury.blastradius.catalog.RepositoryServiceCatalog;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
 import com.srbmaury.blastradius.github.GitHubPullRequestClient;
@@ -25,17 +26,20 @@ public class PullRequestAnalysisController {
     private final PullRequestDiffParser diffParser;
     private final ImpactAnalysisService impactAnalysisService;
     private final ImpactReportFormatter reportFormatter;
+    private final RepositoryServiceCatalog serviceCatalog;
 
     public PullRequestAnalysisController(
             GitHubPullRequestClient githubClient,
             PullRequestDiffParser diffParser,
             ImpactAnalysisService impactAnalysisService,
-            ImpactReportFormatter reportFormatter
+            ImpactReportFormatter reportFormatter,
+            RepositoryServiceCatalog serviceCatalog
     ) {
         this.githubClient = githubClient;
         this.diffParser = diffParser;
         this.impactAnalysisService = impactAnalysisService;
         this.reportFormatter = reportFormatter;
+        this.serviceCatalog = serviceCatalog;
     }
 
     @GetMapping("/{owner}/{repo}/{number}/changes")
@@ -64,7 +68,15 @@ public class PullRequestAnalysisController {
                 number
         );
 
-        return impactAnalysisService.analyze(changeSet, service);
+        String resolvedService = resolveService(
+                owner + "/" + repo,
+                service
+        );
+
+        return impactAnalysisService.analyze(
+                changeSet,
+                resolvedService
+        );
     }
 
     @PostMapping("/{owner}/{repo}/{number}/comment")
@@ -110,6 +122,19 @@ public class PullRequestAnalysisController {
     ) {
         PullRequestChangeSet changeSet = analyzeRawDiff(diff);
         return impactAnalysisService.analyze(changeSet, service);
+    }
+
+    private String resolveService(
+            String repository,
+            String explicitService
+    ) {
+        if (explicitService != null && !explicitService.isBlank()) {
+            return explicitService.trim();
+        }
+
+        return serviceCatalog.find(repository)
+                .map(mapping -> mapping.service())
+                .orElse(null);
     }
 
     private void validateRepositoryPart(String value) {
