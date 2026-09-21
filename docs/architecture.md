@@ -84,7 +84,19 @@ Stale edges are deleted according to the configured retention window.
 
 ## Evidence model
 
-Only observed SQL or runtime edges become `CONFIRMED` findings. Missing telemetry remains missing evidence rather than guessed topology.
+Only observed SQL or runtime edges become `CONFIRMED` findings.
+
+The analyzer separately reports **coverage** for each evidence source. This distinction is important:
+
+```text
+No findings + AVAILABLE coverage
+    !=
+No findings + UNAVAILABLE coverage
+```
+
+The first means the connected source was queried and did not provide matching evidence. The second means the system cannot make that claim because the evidence source was unavailable.
+
+PR reports therefore warn explicitly when coverage is incomplete rather than presenting an empty finding set as a safety signal.
 
 ## Next focused capability
 
