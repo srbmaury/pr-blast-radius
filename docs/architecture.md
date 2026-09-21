@@ -21,8 +21,11 @@ PR Diff Ingestor                 service resolution
    |         v                  |
    |    JavaParser AST          |
    |         |                  |
-   |         v                  |
-   |   owning Spring endpoint   |
+   |         +--> owning Spring endpoint
+   |         |
+   |         +--> static outbound API calls
+   |              RestTemplate / RestClient
+   |              WebClient / OpenFeign
    |                            |
    +----------+-----------------+
               |
@@ -219,6 +222,40 @@ Trace lineage defaults to 24-hour retention while the aggregated topology graph 
 
 This is observational causality over retained traces, not exhaustive proof of all possible execution paths. Async producer→consumer relationships represented only by OpenTelemetry span links are not traversed in this version.
 
+## Static outbound API extraction
+
+The same head-revision Java source used for endpoint ownership is inspected for outbound client calls rooted in changed methods.
+
+The analyzer currently recognizes:
+
+```text
+RestTemplate
+RestClient
+WebClient
+OpenFeign
+```
+
+For direct HTTP clients, only literal absolute URLs or literal relative routes with a literal client base URL are emitted. Dynamic values are skipped.
+
+For OpenFeign, the analyzer records a candidate invocation from the changed source, resolves the imported client type back to a Java source path under the same source root, loads that interface at the PR head SHA, and reads literal `@FeignClient` plus Spring mapping annotations.
+
+Same-class helper methods are traversed recursively. Arbitrary injected service classes are not yet followed, which keeps the first static implementation deterministic without pretending to have full symbol resolution.
+
+Static findings are fused with runtime findings:
+
+```text
+same service + same endpoint + CONFIRMED runtime
+    → retain CONFIRMED and append static source evidence
+
+same service + broad POSSIBLE topology
+    → upgrade to STRONG using static route evidence
+
+static dependency with no runtime match
+    → STRONG
+```
+
+Static evidence is attached separately to the PR change set rather than represented as a source-code change.
+
 ## Evidence model
 
 Only observed SQL or runtime edges become `CONFIRMED` findings.
@@ -237,4 +274,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Add static outbound-call extraction for Java/Spring clients so endpoint-causal runtime evidence can be complemented by code-level API dependencies when production traces are sparse or sampled.
+Turn the analysis into an automatic GitHub App check/webhook flow so newly opened or updated pull requests receive blast-radius results without manually calling the analysis API.
