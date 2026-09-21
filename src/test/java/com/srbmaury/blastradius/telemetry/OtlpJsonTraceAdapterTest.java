@@ -40,8 +40,9 @@ class OtlpJsonTraceAdapterTest {
                                   "value": {"stringValue": "POST"}
                                 },
                                 {
-                                  "key": "http.route",
+                                  "key": "url.template",
                                   "value": {"stringValue": "/payments/{id}"}
+
                                 }
                               ]
                             }
