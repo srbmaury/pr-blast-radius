@@ -49,8 +49,14 @@ public class ImpactAnalysisService {
             PullRequestChangeSet changeSet,
             String rootService
     ) {
+        String tenant = TenantIds.normalize(tenantId);
+
         List<ImpactFinding> findings = new ArrayList<>();
-        findings.addAll(databaseImpactService.analyze(changeSet));
+        if (TenantIds.DEFAULT.equals(tenant)) {
+            findings.addAll(
+                    databaseImpactService.analyze(changeSet)
+            );
+        }
 
         Set<String> changedEndpoints = changeSet.changes().stream()
                 .filter(change -> change.kind() == ChangeKind.API_ENDPOINT)
@@ -59,7 +65,7 @@ public class ImpactAnalysisService {
 
         List<ImpactFinding> runtimeFindings =
                 runtimeImpactService.analyze(
-                        tenantId,
+                        tenant,
                         rootService,
                         changedEndpoints
                 );
@@ -71,7 +77,7 @@ public class ImpactAnalysisService {
 
         List<ImpactFinding> immutableFindings = List.copyOf(findings);
         List<EvidenceCoverage> coverage = evidenceCoverageService.evaluate(
-                tenantId,
+                tenant,
                 changeSet,
                 rootService,
                 immutableFindings
