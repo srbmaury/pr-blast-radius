@@ -10,7 +10,8 @@ import com.srbmaury.blastradius.domain.TraceCausalityResult;
 import com.srbmaury.blastradius.telemetry.OtlpJsonTraceAdapter;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
 import com.srbmaury.blastradius.telemetry.TraceCausalityService;
-import com.srbmaury.blastradius.tenant.TenantIds;
+import com.srbmaury.blastradius.tenant.TenantAccessResolver;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,15 +34,18 @@ public class TelemetryController {
     private final RuntimeDependencyService dependencyService;
     private final TraceCausalityService traceCausalityService;
     private final OtlpJsonTraceAdapter otlpJsonTraceAdapter;
+    private final TenantAccessResolver tenantAccessResolver;
 
     public TelemetryController(
             RuntimeDependencyService dependencyService,
             TraceCausalityService traceCausalityService,
-            OtlpJsonTraceAdapter otlpJsonTraceAdapter
+            OtlpJsonTraceAdapter otlpJsonTraceAdapter,
+            TenantAccessResolver tenantAccessResolver
     ) {
         this.dependencyService = dependencyService;
         this.traceCausalityService = traceCausalityService;
         this.otlpJsonTraceAdapter = otlpJsonTraceAdapter;
+        this.tenantAccessResolver = tenantAccessResolver;
     }
 
     @PostMapping("/spans")
@@ -50,12 +54,22 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
+        String tenant = tenantAccessResolver.resolveIngestTenant(
+                authorization,
+                tenantId
+        );
+
         long accepted = dependencyService.ingest(
-                TenantIds.normalize(tenantId),
+                tenant,
                 observations
         );
+
         return Map.of("accepted", accepted);
     }
 
@@ -68,9 +82,17 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
-        String tenant = TenantIds.normalize(tenantId);
+        String tenant = tenantAccessResolver.resolveIngestTenant(
+                authorization,
+                tenantId
+        );
+
         OtlpTraceBatch batch =
                 otlpJsonTraceAdapter.extractBatch(payload);
 
@@ -98,10 +120,17 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         return dependencyService.allEdges(
-                TenantIds.normalize(tenantId)
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                )
         );
     }
 
@@ -113,10 +142,17 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         return dependencyService.blastRadius(
-                TenantIds.normalize(tenantId),
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                ),
                 service,
                 maxDepth,
                 endpoint == null ? Set.of() : endpoint
@@ -130,10 +166,17 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         return traceCausalityService.analyze(
-                TenantIds.normalize(tenantId),
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                ),
                 service,
                 endpoint
         );
@@ -146,10 +189,17 @@ public class TelemetryController {
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
-            ) String tenantId
+            ) String tenantId,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorization
     ) {
         return dependencyService.downstream(
-                TenantIds.normalize(tenantId),
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                ),
                 service,
                 maxDepth
         );
