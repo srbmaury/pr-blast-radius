@@ -6,6 +6,15 @@ spring:
     username: ${DATABASE_USER:blast_radius}
     password: ${DATABASE_PASSWORD:blast_radius}
 
+metadata:
+  datasource:
+    url: ${METADATA_DATABASE_URL:jdbc:h2:file:./data/pr-blast-radius-metadata;AUTO_SERVER=TRUE}
+    username: ${METADATA_DATABASE_USER:sa}
+    password: ${METADATA_DATABASE_PASSWORD:}
+    driver-class-name: ${METADATA_DATABASE_DRIVER:org.h2.Driver}
+  retention-hours: ${METADATA_RETENTION_HOURS:168}
+  cleanup-interval-ms: ${METADATA_CLEANUP_INTERVAL_MS:3600000}
+
 management:
   endpoints:
     web:
