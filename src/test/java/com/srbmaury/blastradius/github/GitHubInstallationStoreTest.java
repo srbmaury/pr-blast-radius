@@ -69,4 +69,26 @@ class GitHubInstallationStoreTest {
         store.initialize();
         return store;
     }
+
+    @Test
+    void inactiveInstallationStillCannotMoveToAnotherTenant() {
+        var store = store();
+
+        store.bind(
+                "tenant-a",
+                1003L,
+                "acme",
+                "Organization"
+        );
+        store.markInactive(1003L);
+
+        assertThatThrownBy(() -> store.bind(
+                "tenant-b",
+                1003L,
+                "acme",
+                "Organization"
+        )).isInstanceOf(IllegalStateException.class);
+    }
+
+
 }
