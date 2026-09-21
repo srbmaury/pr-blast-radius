@@ -188,6 +188,19 @@ public class GitHubInstallationStore {
         ).stream().findFirst();
     }
 
+    public void markActive(long installationId) {
+        jdbcTemplate.update(
+                """
+                UPDATE github_installation
+                SET status = 'ACTIVE',
+                    updated_at = ?
+                WHERE installation_id = ?
+                """,
+                Timestamp.from(Instant.now()),
+                installationId
+        );
+    }
+
     public void markInactive(long installationId) {
         jdbcTemplate.update(
                 """
