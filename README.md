@@ -30,28 +30,45 @@ Findings are evidence-based:
 - PostgreSQL runtime query evidence through `pg_stat_statements`
 - Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
 - OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
+- Persistent runtime dependency edges in a dedicated metadata database
+- TTL-based cleanup of stale runtime edges
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
-- Unit tests for parser precision, runtime DB evidence, graph traversal, OTLP JSON adaptation, runtime impact, and report formatting
+
+## Data separation
+
+The application uses two independent databases:
+
+```text
+Customer PostgreSQL
+        |
+        +--> read pg_stat_statements
+        +--> production evidence only
+
+Product metadata database
+        |
+        +--> runtime_dependency_edge
+        +--> call counts
+        +--> last-seen timestamps
+        +--> retention cleanup
+```
+
+Runtime graph metadata is never written into the customer's PostgreSQL database.
+
+By default, product metadata uses a local H2 file:
+
+```text
+./data/pr-blast-radius-metadata
+```
+
+It can be replaced with a dedicated external database through configuration.
 
 ## PR analysis API
 
-Structural changes only:
-
 ```text
 GET /api/v1/pr/{owner}/{repo}/{number}/changes
-```
-
-Combine PR changes with production evidence. Pass the owning runtime service explicitly:
-
-```text
 GET /api/v1/pr/{owner}/{repo}/{number}/impact?service=orders-service
-```
-
-Publish the generated report back to the PR:
-
-```text
 POST /api/v1/pr/{owner}/{repo}/{number}/comment?service=orders-service
 ```
 
@@ -65,34 +82,20 @@ Content-Type: text/plain
 
 ## Runtime telemetry API
 
-Normalized observations are supported directly:
+Normalized observations:
 
 ```text
 POST /api/v1/telemetry/spans
 ```
 
-OTLP/HTTP JSON-shaped trace payloads are also supported:
+OTLP/HTTP JSON-shaped traces:
 
 ```text
 POST /api/v1/telemetry/otlp-json/v1/traces
 Content-Type: application/json
 ```
 
-The adapter extracts:
-
-```text
-resource.attributes["service.name"]
-        +
-span.attributes["peer.service"]
-        +
-CLIENT / PRODUCER span kind
-        ↓
-source-service -> target-service
-```
-
-Only outbound `CLIENT` and `PRODUCER` spans create edges, preventing corresponding server spans from double-counting a call.
-
-Inspect the resulting graph:
+Inspect the persisted graph:
 
 ```text
 GET /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
@@ -101,22 +104,44 @@ GET /api/v1/telemetry/dependencies
 
 ## Configuration
 
+Customer evidence database:
+
 ```bash
-export GITHUB_TOKEN=...
-export DATABASE_URL=jdbc:postgresql://localhost:5432/blast_radius
-export DATABASE_USER=blast_radius
-export DATABASE_PASSWORD=blast_radius
+export DATABASE_URL=jdbc:postgresql://localhost:5432/customer_db
+export DATABASE_USER=...
+export DATABASE_PASSWORD=...
 ```
 
-For runtime SQL evidence, PostgreSQL must expose `pg_stat_statements`. If it is unavailable, the system returns no DB runtime evidence instead of guessing.
+Product metadata database:
 
-## Current MVP limitations
+```bash
+export METADATA_DATABASE_URL='jdbc:h2:file:./data/pr-blast-radius-metadata;AUTO_SERVER=TRUE'
+export METADATA_DATABASE_USER=sa
+export METADATA_DATABASE_PASSWORD=
+export METADATA_DATABASE_DRIVER=org.h2.Driver
+```
+
+Retention defaults to 7 days:
+
+```bash
+export METADATA_RETENTION_HOURS=168
+export METADATA_CLEANUP_INTERVAL_MS=3600000
+```
+
+GitHub write access:
+
+```bash
+export GITHUB_TOKEN=...
+```
+
+For runtime SQL evidence, customer PostgreSQL must expose `pg_stat_statements`. If it is unavailable, the system returns no DB runtime evidence instead of guessing.
+
+## Current limitations
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
-- Runtime dependency edges are stored in memory and reset on restart.
-- Repository-to-service ownership is explicit through the `service` parameter; no heuristic mapping is used.
+- Repository-to-service ownership is explicit through the `service` parameter.
 - Static Java analysis detects changed types but does not yet build a full symbol-level call graph.
-- Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes are intentionally out of scope.
+- Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes remain out of scope.
 
 ## Local development
 
@@ -128,12 +153,6 @@ Requirements:
 
 ```bash
 mvn spring-boot:run
-```
-
-Health endpoint:
-
-```text
-GET /actuator/health
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the architecture.
