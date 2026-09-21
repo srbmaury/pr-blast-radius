@@ -33,6 +33,7 @@ Findings are evidence-based:
 - Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
 - Bidirectional blast radius: callers into the changed service plus dependencies it calls
 - Endpoint-aware caller filtering for changed Spring routes
+- Trace-path causality that ties changed inbound endpoints to downstream calls actually observed beneath matching server spans
 - OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
 - Stable endpoint identity from HTTP client `url.template` (with `http.route` compatibility fallback), RPC service/method, and messaging destination attributes
 - Persistent runtime dependency edges in a dedicated metadata database
@@ -95,6 +96,7 @@ Product metadata database
         |
         +--> runtime_dependency_route_edge
         +--> repository_service_mapping
+        +--> trace_span (short-lived lineage)
         +--> retention cleanup
 ```
 
@@ -129,6 +131,7 @@ POST /api/v1/telemetry/spans
 POST /api/v1/telemetry/otlp-json/v1/traces
 GET  /api/v1/telemetry/blast-radius?service=orders-service&maxDepth=3
 GET  /api/v1/telemetry/blast-radius?service=orders-service&maxDepth=3&endpoint=HTTP%20POST%20/orders
+GET  /api/v1/telemetry/trace-causality?service=orders-service&endpoint=HTTP%20POST%20/orders
 GET  /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
 GET  /api/v1/telemetry/dependencies
 ```
@@ -152,12 +155,16 @@ export METADATA_DATABASE_PASSWORD=
 export METADATA_DATABASE_DRIVER=org.h2.Driver
 ```
 
-Retention defaults to 7 days:
+Runtime topology retention defaults to 7 days; raw trace lineage defaults to 24 hours:
 
 ```bash
 export METADATA_RETENTION_HOURS=168
+export TRACE_RETENTION_HOURS=24
+export TRACE_MAX_ROOT_SPANS=1000
 export METADATA_CLEANUP_INTERVAL_MS=3600000
 ```
+
+Trace lineage intentionally stores only identifiers and low-cardinality metadata required for causality: trace/span IDs, parent linkage, service names, span kind, normalized endpoint identity, target service, and timestamp. Request/response payloads and arbitrary span attribute bags are not persisted.
 
 GitHub write access:
 
@@ -183,6 +190,13 @@ SERVICE_RUNTIME
 - NOT_CONFIGURED
 
 ENDPOINT_RUNTIME
+- AVAILABLE
+- NO_DATA
+- UNAVAILABLE
+- NOT_CONFIGURED
+- NOT_APPLICABLE
+
+TRACE_PATH
 - AVAILABLE
 - NO_DATA
 - UNAVAILABLE
@@ -279,11 +293,46 @@ HTTP POST /orders
 
 The analyzer checks both the PR base and head revisions, so replacement edits and deletion-only body changes still map to the endpoint.
 
+## Trace-path causality
+
+When a changed endpoint has retained OpenTelemetry server spans, downstream impact is reconstructed from actual span ancestry rather than from the service's entire dependency graph.
+
+For example:
+
+```text
+checkout CLIENT POST /orders
+        ↓
+orders SERVER POST /orders   ← changed endpoint
+        ↓
+orders INTERNAL
+        ↓
+orders CLIENT POST /payments
+        ↓
+payment SERVER POST /payments
+        ↓
+payment CLIENT POST /ledger
+```
+
+produces causal downstream findings:
+
+```text
+POST /orders
+  → payment-service POST /payments
+  → ledger-service POST /ledger
+```
+
+An unrelated call such as `orders → email-service POST /notify` is excluded unless it appears beneath a matching `POST /orders` server span in the retained trace tree.
+
+If matching endpoint traces are unavailable, the product falls back to the broader service dependency graph and marks downstream findings as `POSSIBLE` instead of `CONFIRMED`.
+
+Trace-path evidence is observational: it proves that a path occurred in retained traces, not that every possible production path was sampled. Parent/child span ancestry is supported in this version; asynchronous producer→consumer causality represented only through span links is not reconstructed yet.
+
 ## Current limitations
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
 - Repository/service mapping is explicit rather than inferred.
 - Source-aware endpoint ownership currently supports Java/Spring methods with literal mapping paths. Custom composed annotations, path constants, and dynamically constructed mappings are not resolved yet.
+- Asynchronous messaging causality through OpenTelemetry span links is not reconstructed yet.
 - Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes remain out of scope.
 
 ## Local development
