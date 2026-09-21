@@ -115,6 +115,64 @@ class GitHubOnboardingServiceTest {
                 );
     }
 
+    @Test
+    void candidatesAreTenantScopedAndDisappearAfterClaim() {
+        Fixture fixture = fixture();
+
+        fixture.candidates().replace(
+                "tenant-a",
+                List.of(
+                        new GitHubInstallationInfo(
+                                301L,
+                                "acme",
+                                "Organization",
+                                "CANDIDATE"
+                        )
+                ),
+                java.time.Instant.now()
+                        .plusSeconds(300)
+        );
+
+        fixture.candidates().replace(
+                "tenant-b",
+                List.of(
+                        new GitHubInstallationInfo(
+                                401L,
+                                "other",
+                                "Organization",
+                                "CANDIDATE"
+                        )
+                ),
+                java.time.Instant.now()
+                        .plusSeconds(300)
+        );
+
+        assertThat(fixture.service().candidates(
+                "tenant-a"
+        ))
+                .extracting(
+                        GitHubInstallationInfo::installationId
+                )
+                .containsExactly(301L);
+
+        fixture.service().claim(
+                "tenant-a",
+                301L
+        );
+
+        assertThat(fixture.service().candidates(
+                "tenant-a"
+        )).isEmpty();
+
+        assertThat(fixture.service().candidates(
+                "tenant-b"
+        ))
+                .extracting(
+                        GitHubInstallationInfo::installationId
+                )
+                .containsExactly(401L);
+    }
+
     private Fixture fixture() {
         JdbcTemplate jdbc = new JdbcTemplate(
                 new DriverManagerDataSource(
@@ -152,7 +210,8 @@ class GitHubOnboardingServiceTest {
         return new Fixture(
                 service,
                 client,
-                installations
+                installations,
+                candidates
         );
     }
 
@@ -169,6 +228,7 @@ class GitHubOnboardingServiceTest {
     private record Fixture(
             GitHubOnboardingService service,
             GitHubAppClient client,
-            GitHubInstallationStore installations
+            GitHubInstallationStore installations,
+            GitHubInstallationCandidateStore candidates
     ) {}
 }
