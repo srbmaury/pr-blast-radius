@@ -117,9 +117,22 @@ public class TraceSpanStore {
             int limit
     ) {
         int boundedLimit = Math.max(1, Math.min(limit, 5000));
+        Set<String> normalizedEndpoints = endpoints == null
+                ? Set.of()
+                : endpoints.stream()
+                        .filter(endpoint -> endpoint != null && !endpoint.isBlank())
+                        .map(String::trim)
+                        .collect(Collectors.toUnmodifiableSet());
 
-        return jdbcTemplate.query(
-                """
+        String endpointPredicate = normalizedEndpoints.isEmpty()
+                ? ""
+                : " AND endpoint IN ("
+                        + normalizedEndpoints.stream()
+                                .map(ignored -> "?")
+                                .collect(Collectors.joining(","))
+                        + ")";
+
+        String sql = """
                 SELECT trace_id,
                        span_id,
                        parent_span_id,
@@ -131,9 +144,20 @@ public class TraceSpanStore {
                 FROM trace_span
                 WHERE service_name = ?
                   AND span_kind = 'SERVER'
+                """
+                + endpointPredicate
+                + """
                 ORDER BY observed_at DESC
                 LIMIT ?
-                """,
+                """;
+
+        List<Object> args = new ArrayList<>();
+        args.add(serviceName);
+        args.addAll(normalizedEndpoints.stream().sorted().toList());
+        args.add(boundedLimit);
+
+        return jdbcTemplate.query(
+                sql,
                 (rs, rowNum) -> mapSpan(
                         rs.getString("trace_id"),
                         rs.getString("span_id"),
@@ -144,13 +168,8 @@ public class TraceSpanStore {
                         rs.getString("span_kind"),
                         rs.getTimestamp("observed_at")
                 ),
-                serviceName,
-                boundedLimit
-        ).stream()
-                .filter(span -> endpoints == null
-                        || endpoints.isEmpty()
-                        || endpoints.contains(span.endpoint()))
-                .toList();
+                args.toArray()
+        );
     }
 
     public List<TraceSpanObservation> findByTraceIds(Set<String> traceIds) {
