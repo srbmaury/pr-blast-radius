@@ -1,6 +1,7 @@
 package com.srbmaury.blastradius.postgres;
 
 import com.srbmaury.blastradius.domain.PostgresQueryEvidence;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -16,7 +17,9 @@ public class PostgresDependencyCollector {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public PostgresDependencyCollector(JdbcTemplate jdbcTemplate) {
+    public PostgresDependencyCollector(
+            @Qualifier("customerJdbcTemplate") JdbcTemplate jdbcTemplate
+    ) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -76,7 +79,7 @@ public class PostgresDependencyCollector {
     }
 
     private String simpleIdentifier(String identifier) {
-        String normalized = identifier.replace("\"", "").toLowerCase(Locale.ROOT);
+        String normalized = identifier.replace(""", "").toLowerCase(Locale.ROOT);
         int dot = normalized.lastIndexOf('.');
         return dot >= 0 ? normalized.substring(dot + 1) : normalized;
     }
