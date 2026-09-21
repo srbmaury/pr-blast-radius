@@ -225,4 +225,42 @@ class StaticOutboundCallAnalyzerTest {
                 "Line not found: " + needle
         );
     }
+
+    @Test
+    void extractsRestClientCreateBaseUrl() {
+        String source = """
+                import org.springframework.web.client.RestClient;
+
+                class BillingService {
+                    private final RestClient billingClient =
+                            RestClient.create("http://billing-service/api");
+
+                    void bill() {
+                        billingClient.post()
+                                .uri("/charges")
+                                .retrieve();
+                    }
+                }
+                """;
+
+        int changedLine = lineOf(
+                source,
+                "billingClient.post()"
+        );
+
+        assertThat(analyzer.analyze(
+                source,
+                Set.of(changedLine)
+        ).outboundCalls())
+                .singleElement()
+                .satisfies(call -> {
+                    assertThat(call.targetService())
+                            .isEqualTo("billing-service");
+                    assertThat(call.endpoint())
+                            .isEqualTo(
+                                    "HTTP POST /api/charges"
+                            );
+                });
+    }
+
 }
