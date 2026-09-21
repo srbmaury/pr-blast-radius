@@ -37,6 +37,8 @@ Findings are evidence-based:
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
+- Evidence coverage states for PostgreSQL and runtime-service telemetry
+- Explicit warnings when missing telemetry prevents a trustworthy safety conclusion
 
 ## Repository → service catalog
 
@@ -155,6 +157,26 @@ GitHub write access:
 ```bash
 export GITHUB_TOKEN=...
 ```
+
+## Evidence coverage
+
+Every impact response now reports whether each evidence source was actually usable:
+
+```text
+POSTGRES_RUNTIME
+- AVAILABLE
+- NO_DATA
+- UNAVAILABLE
+- NOT_APPLICABLE
+
+SERVICE_RUNTIME
+- AVAILABLE
+- NO_DATA
+- UNAVAILABLE
+- NOT_CONFIGURED
+```
+
+This prevents a dangerous interpretation of an empty result. If telemetry is missing, the PR report explicitly says that the analysis is incomplete and must not be treated as proof that the change is safe.
 
 ## Current limitations
 

@@ -3,6 +3,7 @@ package com.srbmaury.blastradius.service;
 import com.srbmaury.blastradius.domain.ImpactConfidence;
 import com.srbmaury.blastradius.domain.ImpactFinding;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,16 +24,20 @@ public class RuntimeImpactService {
             return List.of();
         }
 
-        return dependencyService.downstream(rootService, DEFAULT_MAX_DEPTH)
-                .edges()
-                .stream()
-                .map(edge -> new ImpactFinding(
-                        edge.targetService(),
-                        edge.sourceService() + " -> " + edge.targetService(),
-                        "runtime calls=" + edge.callCount()
-                                + ", lastSeen=" + edge.lastSeen(),
-                        ImpactConfidence.CONFIRMED
-                ))
-                .toList();
+        try {
+            return dependencyService.downstream(rootService, DEFAULT_MAX_DEPTH)
+                    .edges()
+                    .stream()
+                    .map(edge -> new ImpactFinding(
+                            edge.targetService(),
+                            edge.sourceService() + " -> " + edge.targetService(),
+                            "runtime calls=" + edge.callCount()
+                                    + ", lastSeen=" + edge.lastSeen(),
+                            ImpactConfidence.CONFIRMED
+                    ))
+                    .toList();
+        } catch (DataAccessException ex) {
+            return List.of();
+        }
     }
 }

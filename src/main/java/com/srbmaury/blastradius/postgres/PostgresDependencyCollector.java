@@ -73,13 +73,17 @@ public class PostgresDependencyCollector {
         }
 
         Pattern pattern = Pattern.compile(
-                "(?i)(?<![A-Za-z0-9_$])" + Pattern.quote(identifier) + "(?![A-Za-z0-9_$])"
+                "(?i)(?<![A-Za-z0-9_$])"
+                        + Pattern.quote(identifier)
+                        + "(?![A-Za-z0-9_$])"
         );
         return pattern.matcher(query).find();
     }
 
     private String simpleIdentifier(String identifier) {
-        String normalized = identifier.replace(""", "").toLowerCase(Locale.ROOT);
+        String normalized = identifier
+                .replace("\"", "")
+                .toLowerCase(Locale.ROOT);
         int dot = normalized.lastIndexOf('.');
         return dot >= 0 ? normalized.substring(dot + 1) : normalized;
     }

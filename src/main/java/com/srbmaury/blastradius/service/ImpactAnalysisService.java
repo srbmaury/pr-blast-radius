@@ -1,5 +1,6 @@
 package com.srbmaury.blastradius.service;
 
+import com.srbmaury.blastradius.domain.EvidenceCoverage;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.ImpactFinding;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
@@ -13,13 +14,16 @@ public class ImpactAnalysisService {
 
     private final DatabaseImpactService databaseImpactService;
     private final RuntimeImpactService runtimeImpactService;
+    private final EvidenceCoverageService evidenceCoverageService;
 
     public ImpactAnalysisService(
             DatabaseImpactService databaseImpactService,
-            RuntimeImpactService runtimeImpactService
+            RuntimeImpactService runtimeImpactService,
+            EvidenceCoverageService evidenceCoverageService
     ) {
         this.databaseImpactService = databaseImpactService;
         this.runtimeImpactService = runtimeImpactService;
+        this.evidenceCoverageService = evidenceCoverageService;
     }
 
     public ImpactAnalysisResponse analyze(
@@ -30,9 +34,17 @@ public class ImpactAnalysisService {
         findings.addAll(databaseImpactService.analyze(changeSet));
         findings.addAll(runtimeImpactService.analyze(rootService));
 
+        List<ImpactFinding> immutableFindings = List.copyOf(findings);
+        List<EvidenceCoverage> coverage = evidenceCoverageService.evaluate(
+                changeSet,
+                rootService,
+                immutableFindings
+        );
+
         return new ImpactAnalysisResponse(
                 changeSet,
-                List.copyOf(findings)
+                immutableFindings,
+                coverage
         );
     }
 }
