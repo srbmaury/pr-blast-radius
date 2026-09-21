@@ -78,6 +78,9 @@ public class RuntimeDependencyStore {
                           AND scoped.endpoint = legacy.endpoint
                     )
                     """);
+            jdbcTemplate.execute(
+                    "DROP TABLE runtime_dependency_route_edge"
+            );
         } catch (DataAccessException ignored) {
             // Fresh installations do not have the pre-tenant table.
         }
@@ -111,6 +114,9 @@ public class RuntimeDependencyStore {
                           AND scoped.endpoint = '*'
                     )
                     """);
+            jdbcTemplate.execute(
+                    "DROP TABLE runtime_dependency_edge"
+            );
         } catch (DataAccessException ignored) {
             // Fresh installations do not have the oldest legacy table.
         }
