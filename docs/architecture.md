@@ -11,9 +11,9 @@ Repository / service catalog
 GitHub PR                       |
    |                            |
    v                            v
-PR Diff Ingestor
-   |\
-   +--> Spring endpoint changes          service resolution
+PR Diff Ingestor                 service resolution
+   |                            |
+   +--> Spring endpoint changes |
    |                            |
    +----------+-----------------+
               |
@@ -108,7 +108,7 @@ HTTP POST /orders
 HTTP GET /orders/{id}
 ```
 
-OTLP client spans derive the same identity from stable semantic-convention attributes. Runtime storage therefore distinguishes multiple routes between the same two services.
+OTLP client spans derive the same identity from low-cardinality client route metadata (`url.template` when available, with `http.route` accepted as a compatibility fallback). Runtime storage therefore distinguishes multiple routes between the same two services.
 
 For a changed endpoint, only matching **direct incoming** edges seed caller traversal:
 
