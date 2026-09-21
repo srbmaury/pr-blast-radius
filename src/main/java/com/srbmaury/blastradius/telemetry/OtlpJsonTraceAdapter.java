@@ -2,6 +2,8 @@ package com.srbmaury.blastradius.telemetry;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
+import com.srbmaury.blastradius.domain.OtlpTraceBatch;
+import com.srbmaury.blastradius.domain.TraceSpanObservation;
 import org.springframework.stereotype.Component;
 
 import java.math.BigInteger;
@@ -17,19 +19,27 @@ public class OtlpJsonTraceAdapter {
             BigInteger.valueOf(1_000_000_000L);
 
     public List<OpenTelemetrySpanObservation> extract(JsonNode payload) {
-        List<OpenTelemetrySpanObservation> observations = new ArrayList<>();
+        return extractBatch(payload).dependencyObservations();
+    }
+
+    public OtlpTraceBatch extractBatch(JsonNode payload) {
+        List<OpenTelemetrySpanObservation> dependencies = new ArrayList<>();
+        List<TraceSpanObservation> traceSpans = new ArrayList<>();
 
         if (payload == null || payload.isNull()) {
-            return observations;
+            return new OtlpTraceBatch(
+                    List.of(),
+                    List.of()
+            );
         }
 
         for (JsonNode resourceSpans : payload.path("resourceSpans")) {
-            String sourceService = findAttribute(
+            String serviceName = findAttribute(
                     resourceSpans.path("resource").path("attributes"),
                     "service.name"
             );
 
-            if (sourceService == null || sourceService.isBlank()) {
+            if (serviceName == null || serviceName.isBlank()) {
                 continue;
             }
 
@@ -41,41 +51,93 @@ public class OtlpJsonTraceAdapter {
                     }
 
                     JsonNode attributes = span.path("attributes");
-                    String targetService = firstAttribute(
+                    String targetService = resolveTargetService(
                             attributes,
-                            "peer.service",
-                            "server.address"
+                            spanKind
+                    );
+                    String endpoint = resolveEndpoint(
+                            attributes,
+                            spanKind
+                    );
+                    Instant observedAt = parseUnixNano(
+                            span.path("startTimeUnixNano")
                     );
 
-                    if (targetService == null || targetService.isBlank()) {
+                    if (isOutboundKind(spanKind)
+                            && targetService != null
+                            && !targetService.isBlank()) {
+                        dependencies.add(new OpenTelemetrySpanObservation(
+                                serviceName,
+                                targetService,
+                                endpoint,
+                                spanKind,
+                                observedAt
+                        ));
+                    }
+
+                    String traceId = span.path("traceId").asText();
+                    String spanId = span.path("spanId").asText();
+
+                    if (traceId.isBlank() || spanId.isBlank()) {
                         continue;
                     }
 
-                    observations.add(new OpenTelemetrySpanObservation(
-                            sourceService,
+                    traceSpans.add(new TraceSpanObservation(
+                            traceId,
+                            spanId,
+                            span.path("parentSpanId").asText(),
+                            serviceName,
                             targetService,
-                            resolveEndpoint(attributes, spanKind),
+                            endpoint,
                             spanKind,
-                            parseUnixNano(span.path("startTimeUnixNano"))
+                            observedAt
                     ));
                 }
             }
         }
 
-        return observations;
+        return new OtlpTraceBatch(
+                List.copyOf(dependencies),
+                List.copyOf(traceSpans)
+        );
     }
 
-    private String resolveEndpoint(JsonNode attributes, String spanKind) {
+    private String resolveTargetService(
+            JsonNode attributes,
+            String spanKind
+    ) {
+        if (!isOutboundKind(spanKind)) {
+            return null;
+        }
+
+        return firstAttribute(
+                attributes,
+                "peer.service",
+                "server.address"
+        );
+    }
+
+    private String resolveEndpoint(
+            JsonNode attributes,
+            String spanKind
+    ) {
         String httpMethod = firstAttribute(
                 attributes,
                 "http.request.method",
                 "http.method"
         );
-        String httpRoute = firstAttribute(
-                attributes,
-                "url.template",
-                "http.route"
-        );
+
+        String httpRoute = "SERVER".equals(spanKind)
+                ? firstAttribute(
+                        attributes,
+                        "http.route",
+                        "url.template"
+                )
+                : firstAttribute(
+                        attributes,
+                        "url.template",
+                        "http.route"
+                );
 
         if (httpMethod != null && httpRoute != null) {
             return "HTTP "
@@ -97,12 +159,14 @@ public class OtlpJsonTraceAdapter {
                     + rpcMethod;
         }
 
-        if ("PRODUCER".equals(spanKind)) {
+        if ("PRODUCER".equals(spanKind)
+                || "CONSUMER".equals(spanKind)) {
             String destination = firstAttribute(
                     attributes,
                     "messaging.destination.name",
                     "messaging.destination"
             );
+
             if (destination != null) {
                 return "MESSAGING " + destination;
             }
@@ -111,13 +175,20 @@ public class OtlpJsonTraceAdapter {
         return "*";
     }
 
+    private boolean isOutboundKind(String spanKind) {
+        return "CLIENT".equals(spanKind)
+                || "PRODUCER".equals(spanKind);
+    }
+
     private String firstAttribute(JsonNode attributes, String... keys) {
         for (String key : keys) {
             String value = findAttribute(attributes, key);
+
             if (value != null && !value.isBlank()) {
                 return value;
             }
         }
+
         return null;
     }
 
@@ -142,14 +213,19 @@ public class OtlpJsonTraceAdapter {
     }
 
     private String normalizeSpanKind(JsonNode kindNode) {
-        if (kindNode == null || kindNode.isMissingNode() || kindNode.isNull()) {
+        if (kindNode == null
+                || kindNode.isMissingNode()
+                || kindNode.isNull()) {
             return null;
         }
 
         if (kindNode.isInt() || kindNode.isLong()) {
             return switch (kindNode.asInt()) {
+                case 1 -> "INTERNAL";
+                case 2 -> "SERVER";
                 case 3 -> "CLIENT";
                 case 4 -> "PRODUCER";
+                case 5 -> "CONSUMER";
                 default -> null;
             };
         }
@@ -157,18 +233,26 @@ public class OtlpJsonTraceAdapter {
         String value = kindNode.asText();
 
         return switch (value) {
+            case "SPAN_KIND_INTERNAL", "INTERNAL", "1" -> "INTERNAL";
+            case "SPAN_KIND_SERVER", "SERVER", "2" -> "SERVER";
             case "SPAN_KIND_CLIENT", "CLIENT", "3" -> "CLIENT";
             case "SPAN_KIND_PRODUCER", "PRODUCER", "4" -> "PRODUCER";
+            case "SPAN_KIND_CONSUMER", "CONSUMER", "5" -> "CONSUMER";
             default -> null;
         };
     }
 
     private String normalizeRoute(String route) {
         String normalized = route == null ? "/" : route.trim();
+
         if (normalized.isBlank()) {
             return "/";
         }
-        normalized = normalized.startsWith("/") ? normalized : "/" + normalized;
+
+        normalized = normalized.startsWith("/")
+                ? normalized
+                : "/" + normalized;
+
         return normalized.length() > 1 && normalized.endsWith("/")
                 ? normalized.substring(0, normalized.length() - 1)
                 : normalized;
