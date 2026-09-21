@@ -2,13 +2,13 @@ package com.srbmaury.blastradius.github;
 
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Optional;
 
 @Component
 public class GitHubWebhookDeliveryStore {
@@ -38,30 +38,13 @@ public class GitHubWebhookDeliveryStore {
                 """);
     }
 
-    public synchronized boolean claim(
+    public boolean claim(
             String deliveryId,
             String eventName
     ) {
         Instant now = Instant.now();
 
-        Optional<DeliveryState> existing =
-                jdbcTemplate.query(
-                        """
-                        SELECT status, updated_at
-                        FROM github_webhook_delivery
-                        WHERE delivery_id = ?
-                        """,
-                        (rs, rowNum) ->
-                                new DeliveryState(
-                                        rs.getString("status"),
-                                        rs.getTimestamp(
-                                                "updated_at"
-                                        ).toInstant()
-                                ),
-                        deliveryId
-                ).stream().findFirst();
-
-        if (existing.isEmpty()) {
+        try {
             jdbcTemplate.update(
                     """
                     INSERT INTO github_webhook_delivery (
@@ -77,25 +60,12 @@ public class GitHubWebhookDeliveryStore {
                     Timestamp.from(now)
             );
             return true;
+        } catch (DataAccessException duplicate) {
+            // Existing delivery: only failed or stale work
+            // may atomically transition back to PROCESSING.
         }
 
-        DeliveryState state = existing.get();
-
-        boolean retryable =
-                "FAILED".equals(state.status())
-                        || ("PROCESSING".equals(
-                                state.status())
-                        && state.updatedAt().isBefore(
-                                now.minus(
-                                        STALE_PROCESSING
-                                )
-                        ));
-
-        if (!retryable) {
-            return false;
-        }
-
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE github_webhook_delivery
                 SET event_name = ?,
@@ -103,13 +73,23 @@ public class GitHubWebhookDeliveryStore {
                     detail = NULL,
                     updated_at = ?
                 WHERE delivery_id = ?
+                  AND (
+                        status = 'FAILED'
+                        OR (
+                            status = 'PROCESSING'
+                            AND updated_at < ?
+                        )
+                  )
                 """,
                 eventName,
                 Timestamp.from(now),
-                deliveryId
+                deliveryId,
+                Timestamp.from(
+                        now.minus(STALE_PROCESSING)
+                )
         );
 
-        return true;
+        return updated == 1;
     }
 
     public void complete(
@@ -160,9 +140,4 @@ public class GitHubWebhookDeliveryStore {
                 deliveryId
         );
     }
-
-    private record DeliveryState(
-            String status,
-            Instant updatedAt
-    ) {}
 }
