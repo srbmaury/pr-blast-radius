@@ -33,7 +33,7 @@ Findings are evidence-based:
 - Bidirectional blast radius: callers into the changed service plus dependencies it calls
 - Endpoint-aware caller filtering for changed Spring routes
 - OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
-- Stable endpoint identity from `http.route`, RPC service/method, and messaging destination attributes
+- Stable endpoint identity from HTTP client `url.template` (with `http.route` compatibility fallback), RPC service/method, and messaging destination attributes
 - Persistent runtime dependency edges in a dedicated metadata database
 - TTL-based cleanup of stale runtime edges
 - Persistent repository → runtime service catalog
@@ -226,7 +226,7 @@ OpenTelemetry client spans use the same identity when they expose stable route m
 
 ```text
 http.request.method = POST
-http.route = /orders
+url.template = /orders
 ```
 
 This lets the product distinguish:
