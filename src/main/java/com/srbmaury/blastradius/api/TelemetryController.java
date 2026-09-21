@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1/telemetry")
@@ -67,9 +68,14 @@ public class TelemetryController {
     @GetMapping("/blast-radius")
     public RuntimeBlastRadius blastRadius(
             @RequestParam String service,
-            @RequestParam(defaultValue = "3") int maxDepth
+            @RequestParam(defaultValue = "3") int maxDepth,
+            @RequestParam(required = false) Set<String> endpoint
     ) {
-        return dependencyService.blastRadius(service, maxDepth);
+        return dependencyService.blastRadius(
+                service,
+                maxDepth,
+                endpoint == null ? Set.of() : endpoint
+        );
     }
 
     @GetMapping("/downstream")
