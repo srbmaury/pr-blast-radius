@@ -13,16 +13,20 @@
                                     |
                              pg_stat_statements
 
-OpenTelemetry-derived observations
-              |
-              v
-     Runtime Dependency Store
-     calls + lastSeen + edges
-              |
-              v
-     Cycle-safe graph traversal
-              |
-              +--------------------+
+OTLP/HTTP JSON traces
+        |
+        v
+   OTLP JSON adapter
+service.name + peer.service
+        |
+        v
+ Runtime Dependency Store
+ calls + lastSeen + edges
+        |
+        v
+ Cycle-safe graph traversal
+        |
+        +--------------------------+
                                    |
                                    v
                             Impact Analyzer
@@ -48,10 +52,13 @@ PR diffs provide explicit changed files, Java types, tables, and columns.
 
 ### Runtime service evidence
 
-Normalized outbound OpenTelemetry `CLIENT` / `PRODUCER` observations create directed edges:
+OTLP/HTTP JSON client or producer spans create directed edges only when both attributes are available:
 
 ```text
-checkout-service -> orders-service -> payment-service
+resource service.name = orders-service
+peer.service          = payment-service
+
+orders-service -> payment-service
 ```
 
 Each edge retains:
@@ -75,8 +82,8 @@ A repository/service catalog can replace this later.
 
 PostgreSQL is the source for SQL runtime evidence.
 
-The service dependency graph is intentionally in memory for the MVP. Persistent graph storage can be added only after validating that runtime blast-radius evidence is useful.
+The runtime dependency graph is intentionally in memory for the MVP. This avoids writing product metadata into the customer's production database.
 
 ## Next engineering step
 
-Replace normalized telemetry ingestion with an OpenTelemetry Collector adapter or native OTLP receiver, then persist dependency edges with a retention window.
+Persist dependency edges in a separate product metadata store with a retention window. Native OTLP protobuf support can follow if validation shows the JSON adapter is insufficient.
