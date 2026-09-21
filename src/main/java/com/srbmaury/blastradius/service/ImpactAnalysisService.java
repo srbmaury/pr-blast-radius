@@ -17,15 +17,18 @@ public class ImpactAnalysisService {
 
     private final DatabaseImpactService databaseImpactService;
     private final RuntimeImpactService runtimeImpactService;
+    private final StaticOutboundImpactService staticOutboundImpactService;
     private final EvidenceCoverageService evidenceCoverageService;
 
     public ImpactAnalysisService(
             DatabaseImpactService databaseImpactService,
             RuntimeImpactService runtimeImpactService,
+            StaticOutboundImpactService staticOutboundImpactService,
             EvidenceCoverageService evidenceCoverageService
     ) {
         this.databaseImpactService = databaseImpactService;
         this.runtimeImpactService = runtimeImpactService;
+        this.staticOutboundImpactService = staticOutboundImpactService;
         this.evidenceCoverageService = evidenceCoverageService;
     }
 
@@ -41,9 +44,15 @@ public class ImpactAnalysisService {
                 .map(change -> change.identifier())
                 .collect(Collectors.toUnmodifiableSet());
 
-        findings.addAll(runtimeImpactService.analyze(
-                rootService,
-                changedEndpoints
+        List<ImpactFinding> runtimeFindings =
+                runtimeImpactService.analyze(
+                        rootService,
+                        changedEndpoints
+                );
+
+        findings.addAll(staticOutboundImpactService.fuse(
+                runtimeFindings,
+                changeSet.staticOutboundCalls()
         ));
 
         List<ImpactFinding> immutableFindings = List.copyOf(findings);
