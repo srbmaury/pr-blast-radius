@@ -1,5 +1,6 @@
 package com.srbmaury.blastradius.ingestion;
 
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.NodeList;
@@ -43,6 +44,9 @@ public class SpringEndpointOwnershipAnalyzer {
                 || changedLines.isEmpty()) {
             return List.of();
         }
+
+        StaticJavaParser.getParserConfiguration()
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21);
 
         CompilationUnit unit = StaticJavaParser.parse(source);
         Set<SpringEndpointOwnership> endpoints = new LinkedHashSet<>();
