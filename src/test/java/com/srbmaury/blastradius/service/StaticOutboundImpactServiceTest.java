@@ -68,7 +68,7 @@ class StaticOutboundImpactServiceTest {
     void upgradesPossibleTopologyFindingToStrongWhenStaticCallMatches() {
         var runtime = List.of(new ImpactFinding(
                 "payment-service",
-                "orders-service -> payment-service [HTTP POST /payments] (service-level fallback; no matching trace-path evidence)",
+                "orders-service -> payment-service (service-level fallback; no matching trace-path evidence)",
                 "runtime calls=8241",
                 ImpactConfidence.POSSIBLE
         ));
