@@ -34,10 +34,10 @@ public class RuntimeImpactService {
             );
 
             List<ImpactFinding> findings = new ArrayList<>();
-            Set<String> seenEdges = new HashSet<>();
+            Set<EdgeKey> seenEdges = new HashSet<>();
 
             radius.callers().forEach(edge -> {
-                if (!seenEdges.add(edgeKey(edge.sourceService(), edge.targetService()))) {
+                if (!seenEdges.add(new EdgeKey(edge.sourceService(), edge.targetService()))) {
                     return;
                 }
 
@@ -54,7 +54,7 @@ public class RuntimeImpactService {
             });
 
             radius.dependencies().forEach(edge -> {
-                if (!seenEdges.add(edgeKey(edge.sourceService(), edge.targetService()))) {
+                if (!seenEdges.add(new EdgeKey(edge.sourceService(), edge.targetService()))) {
                     return;
                 }
 
@@ -76,7 +76,5 @@ public class RuntimeImpactService {
         }
     }
 
-    private String edgeKey(String sourceService, String targetService) {
-        return sourceService + "\u0000" + targetService;
-    }
+    private record EdgeKey(String sourceService, String targetService) {}
 }
