@@ -25,28 +25,15 @@ import static org.mockito.Mockito.when;
 class PullRequestAnalysisControllerTest {
 
     @Test
-    void resolvesServiceFromTenantCatalogWhenRequestDoesNotProvideOne() {
-        GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
-        PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
-        ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
-        ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
-        RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
-        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
+    void resolvesServiceFromAuthenticatedTenantCatalog() {
+        Fixture fixture = fixture();
 
-        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
-        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
-        var expected = new ImpactAnalysisResponse(enriched, List.of());
+        when(fixture.access().resolveApiTenant(
+                "Bearer api-token",
+                "tenant-a"
+        )).thenReturn("tenant-a");
 
-        when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
-        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
-        when(enricher.enrich(
-                "acme",
-                "orders",
-                42,
-                "diff",
-                initial
-        )).thenReturn(enriched);
-        when(catalog.find(
+        when(fixture.catalog().find(
                 "tenant-a",
                 "acme/orders"
         )).thenReturn(Optional.of(
@@ -56,114 +43,162 @@ class PullRequestAnalysisControllerTest {
                         Instant.now()
                 )
         ));
-        when(access.resolveApiTenant(
-                "Bearer api-token",
-                "tenant-a"
-        )).thenReturn("tenant-a");
-        when(analysis.analyze(
+
+        when(fixture.analysis().analyze(
                 "tenant-a",
-                enriched,
+                fixture.enriched(),
                 "orders-service"
-        )).thenReturn(expected);
+        )).thenReturn(fixture.expected());
 
-        var controller = new PullRequestAnalysisController(
-                github,
-                parser,
-                analysis,
-                formatter,
-                catalog,
-                enricher
-        );
+        assertThat(fixture.controller()
+                .analyzeGitHubPullRequestImpact(
+                        "acme",
+                        "orders",
+                        42,
+                        null,
+                        "tenant-a",
+                        "Bearer api-token"
+                ))
+                .isSameAs(fixture.expected());
 
-        assertThat(controller.analyzeGitHubPullRequestImpact(
-                "acme",
-                "orders",
-                42,
-                null,
+        verify(fixture.analysis()).analyze(
                 "tenant-a",
-                "Bearer api-token"
-        )).isSameAs(expected);
-
-        verify(analysis).analyze(
-                "tenant-a",
-                enriched,
+                fixture.enriched(),
                 "orders-service"
         );
     }
 
     @Test
     void explicitServiceOverridesTenantCatalog() {
-        GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
-        PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
-        ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
-        ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
-        RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
-        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
+        Fixture fixture = fixture();
 
-        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
-        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
-        var expected = new ImpactAnalysisResponse(enriched, List.of());
-
-        when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
-        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
-        when(enricher.enrich(
-                "acme",
-                "orders",
-                42,
-                "diff",
-                initial
-        )).thenReturn(enriched);
-        when(access.resolveApiTenant(
+        when(fixture.access().resolveApiTenant(
                 "Bearer api-token",
                 "tenant-a"
         )).thenReturn("tenant-a");
-        when(analysis.analyze(
+
+        when(fixture.analysis().analyze(
                 "tenant-a",
-                enriched,
+                fixture.enriched(),
                 "manual-service"
-        )).thenReturn(expected);
+        )).thenReturn(fixture.expected());
 
-        var controller = new PullRequestAnalysisController(
-                github,
-                parser,
-                analysis,
-                formatter,
-                catalog,
-                enricher
-        );
+        assertThat(fixture.controller()
+                .analyzeGitHubPullRequestImpact(
+                        "acme",
+                        "orders",
+                        42,
+                        "manual-service",
+                        "tenant-a",
+                        "Bearer api-token"
+                ))
+                .isSameAs(fixture.expected());
 
-        assertThat(controller.analyzeGitHubPullRequestImpact(
-                "acme",
-                "orders",
-                42,
-                "manual-service",
+        verify(fixture.analysis()).analyze(
                 "tenant-a",
-                "Bearer api-token"
-        )).isSameAs(expected);
-
-        verify(analysis).analyze(
-                "tenant-a",
-                enriched,
+                fixture.enriched(),
                 "manual-service"
         );
-        verifyNoInteractions(catalog);
+        verifyNoInteractions(fixture.catalog());
     }
 
     @Test
-    void missingTenantHeaderUsesDefaultTenant() {
-        GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
-        PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
-        ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
-        ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
-        RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
-        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
+    void authDisabledResolverCanReturnDefaultTenant() {
+        Fixture fixture = fixture();
 
-        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
-        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
-        var expected = new ImpactAnalysisResponse(enriched, List.of());
+        when(fixture.access().resolveApiTenant(
+                null,
+                null
+        )).thenReturn("default");
 
-        when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
-        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
+        when(fixture.catalog().find(
+                "default",
+                "acme/orders"
+        )).thenReturn(Optional.empty());
+
+        when(fixture.analysis().analyze(
+                "default",
+                fixture.enriched(),
+                null
+        )).thenReturn(fixture.expected());
+
+        assertThat(fixture.controller()
+                .analyzeGitHubPullRequestImpact(
+                        "acme",
+                        "orders",
+                        42,
+                        null,
+                        null,
+                        null
+                ))
+                .isSameAs(fixture.expected());
+    }
+
+    @Test
+    void changesEndpointAlsoRequiresTenantResolution() {
+        Fixture fixture = fixture();
+
+        when(fixture.access().resolveApiTenant(
+                "Bearer api-token",
+                "tenant-a"
+        )).thenReturn("tenant-a");
+
+        assertThat(fixture.controller()
+                .analyzeGitHubPullRequest(
+                        "acme",
+                        "orders",
+                        42,
+                        "tenant-a",
+                        "Bearer api-token"
+                ))
+                .isSameAs(fixture.enriched());
+
+        verify(fixture.access()).resolveApiTenant(
+                "Bearer api-token",
+                "tenant-a"
+        );
+    }
+
+    private Fixture fixture() {
+        GitHubPullRequestClient github =
+                mock(GitHubPullRequestClient.class);
+        PullRequestDiffParser parser =
+                mock(PullRequestDiffParser.class);
+        ImpactAnalysisService analysis =
+                mock(ImpactAnalysisService.class);
+        ImpactReportFormatter formatter =
+                mock(ImpactReportFormatter.class);
+        RepositoryServiceCatalog catalog =
+                mock(RepositoryServiceCatalog.class);
+        SourceAwarePullRequestEnricher enricher =
+                mock(SourceAwarePullRequestEnricher.class);
+        TenantAccessResolver access =
+                mock(TenantAccessResolver.class);
+
+        var initial = new PullRequestChangeSet(
+                "acme/orders#42",
+                List.of()
+        );
+        var enriched = new PullRequestChangeSet(
+                "acme/orders#42",
+                List.of()
+        );
+        var expected = new ImpactAnalysisResponse(
+                enriched,
+                List.of()
+        );
+
+        when(github.fetchDiff(
+                "acme",
+                "orders",
+                42
+        )).thenReturn("diff");
+
+        when(parser.parse(
+                "acme/orders#42",
+                "diff"
+        )).thenReturn(initial);
+
         when(enricher.enrich(
                 "acme",
                 "orders",
@@ -171,36 +206,34 @@ class PullRequestAnalysisControllerTest {
                 "diff",
                 initial
         )).thenReturn(enriched);
-        when(catalog.find(
-                "default",
-                "acme/orders"
-        )).thenReturn(Optional.empty());
-        when(access.resolveApiTenant(
-                null,
-                null
-        )).thenReturn("default");
-        when(analysis.analyze(
-                "default",
-                enriched,
-                null
-        )).thenReturn(expected);
 
-        var controller = new PullRequestAnalysisController(
-                github,
-                parser,
+        var controller =
+                new PullRequestAnalysisController(
+                        github,
+                        parser,
+                        analysis,
+                        formatter,
+                        catalog,
+                        enricher,
+                        access
+                );
+
+        return new Fixture(
+                controller,
                 analysis,
-                formatter,
                 catalog,
-                enricher
+                access,
+                enriched,
+                expected
         );
-
-        assertThat(controller.analyzeGitHubPullRequestImpact(
-                "acme",
-                "orders",
-                42,
-                null,
-                null,
-                null
-        )).isSameAs(expected);
     }
+
+    private record Fixture(
+            PullRequestAnalysisController controller,
+            ImpactAnalysisService analysis,
+            RepositoryServiceCatalog catalog,
+            TenantAccessResolver access,
+            PullRequestChangeSet enriched,
+            ImpactAnalysisResponse expected
+    ) {}
 }
