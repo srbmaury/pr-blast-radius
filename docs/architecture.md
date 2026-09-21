@@ -75,6 +75,46 @@ OTLP/HTTP JSON traces
                                        GitHub PR comment
 ```
 
+## Customer UI
+
+The first customer UI is intentionally served from the same Spring Boot origin:
+
+```text
+GET /
+  ↓
+static index.html + styles.css + app.js
+  ↓
+same-origin authenticated APIs
+  ├─ GitHub onboarding/installations
+  ├─ repository/service catalog
+  ├─ telemetry dependencies
+  └─ PR impact analysis
+```
+
+No separate frontend deployment or frontend-specific API layer is required for the first hosted workflow.
+
+Tenant API and ingestion credentials are held only in browser `sessionStorage`. The main page applies a same-origin Content Security Policy and inserts dynamic API values as text rather than HTML.
+
+GitHub onboarding is resilient to popup opener isolation:
+
+```text
+Connect GitHub
+   ↓
+open popup before async request
+   ↓
+authenticated install URL
+   ↓
+GitHub install + OAuth
+   ↓
+HTML callback
+   ├─ postMessage to opener when available
+   └─ dashboard polling installations/candidates
+```
+
+The callback itself contains no tenant API or ingestion credentials. Multiple GitHub installations are exposed to the dashboard only after the backend has verified them through the OAuth user's accessible installations.
+
+The dashboard's setup indicator counts connected evidence/configuration components. It is not an impact score and is never used as a deployment verdict.
+
 ## GitHub App trust boundary
 
 Hosted GitHub access is installation-scoped:
@@ -357,4 +397,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Add the first customer-facing onboarding/status UI on top of the tenant credentials, GitHub App installation flow, repository/service catalog, and telemetry status APIs.
+Add tenant-specific production evidence connectivity: encrypted per-tenant PostgreSQL credentials or a customer-hosted collector/BYOC path so hosted tenants can use PostgreSQL runtime evidence without sharing a deployment-wide datasource.
