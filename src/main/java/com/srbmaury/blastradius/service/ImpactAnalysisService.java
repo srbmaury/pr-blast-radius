@@ -5,6 +5,7 @@ import com.srbmaury.blastradius.domain.EvidenceCoverage;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.ImpactFinding;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -36,6 +37,18 @@ public class ImpactAnalysisService {
             PullRequestChangeSet changeSet,
             String rootService
     ) {
+        return analyze(
+                TenantIds.DEFAULT,
+                changeSet,
+                rootService
+        );
+    }
+
+    public ImpactAnalysisResponse analyze(
+            String tenantId,
+            PullRequestChangeSet changeSet,
+            String rootService
+    ) {
         List<ImpactFinding> findings = new ArrayList<>();
         findings.addAll(databaseImpactService.analyze(changeSet));
 
@@ -46,6 +59,7 @@ public class ImpactAnalysisService {
 
         List<ImpactFinding> runtimeFindings =
                 runtimeImpactService.analyze(
+                        tenantId,
                         rootService,
                         changedEndpoints
                 );
@@ -57,6 +71,7 @@ public class ImpactAnalysisService {
 
         List<ImpactFinding> immutableFindings = List.copyOf(findings);
         List<EvidenceCoverage> coverage = evidenceCoverageService.evaluate(
+                tenantId,
                 changeSet,
                 rootService,
                 immutableFindings
