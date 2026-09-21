@@ -13,6 +13,8 @@ metadata:
     password: ${METADATA_DATABASE_PASSWORD:}
     driver-class-name: ${METADATA_DATABASE_DRIVER:org.h2.Driver}
   retention-hours: ${METADATA_RETENTION_HOURS:168}
+  trace-retention-hours: ${TRACE_RETENTION_HOURS:24}
+  trace-max-root-spans: ${TRACE_MAX_ROOT_SPANS:1000}
   cleanup-interval-ms: ${METADATA_CLEANUP_INTERVAL_MS:3600000}
 
 management:
