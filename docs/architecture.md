@@ -75,6 +75,30 @@ OTLP/HTTP JSON traces
                                        GitHub PR comment
 ```
 
+## Tenant boundary
+
+Hosted metadata is explicitly partitioned by tenant:
+
+```text
+tenant_id + repository
+tenant_id + source_service + target_service + endpoint
+tenant_id + trace_id + span_id
+```
+
+The following metadata tables are tenant-scoped:
+
+```text
+tenant_repository_service_mapping
+tenant_runtime_dependency_route_edge
+tenant_trace_span
+```
+
+Every tenant-aware API passes the tenant id through analysis rather than encoding tenant identity into service names. This keeps runtime graph semantics customer-local and prevents two customers with an `orders-service` from sharing topology.
+
+For backward compatibility, calls without tenant context use the `default` tenant.
+
+The deployment-wide PostgreSQL datasource is intentionally not queried for non-default tenants. A later customer database integration must provide tenant-specific credentials/datasources before PostgreSQL evidence can participate in hosted analysis.
+
 ## Repository/service catalog
 
 Repository ownership is stored explicitly in product metadata:
