@@ -26,3 +26,11 @@ management:
 security:
   tenant-auth-enabled: ${TENANT_AUTH_ENABLED:false}
   admin-token: ${ADMIN_TOKEN:}
+
+github:
+  api-version: ${GITHUB_API_VERSION:2026-03-10}
+  app-client-id: ${GITHUB_APP_CLIENT_ID:}
+  app-client-secret: ${GITHUB_APP_CLIENT_SECRET:}
+  app-private-key: ${GITHUB_APP_PRIVATE_KEY:}
+  app-slug: ${GITHUB_APP_SLUG:}
+  webhook-secret: ${GITHUB_WEBHOOK_SECRET:}

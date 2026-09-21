@@ -43,6 +43,10 @@ Findings are evidence-based:
 - Persistent repository → runtime service catalog
 - Tenant-scoped runtime edges, trace lineage, and repository/service mappings
 - Separate hashed tenant API and telemetry-ingestion credentials for hosted mode
+- Verified GitHub App installation binding through one-time state + user OAuth
+- Installation-scoped GitHub tokens for hosted PR reads/writes
+- Signed, idempotent GitHub webhooks for automatic PR analysis
+- Updatable bot-owned PR report comment plus neutral GitHub Check
 - Automatic service resolution for GitHub PR analysis
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
@@ -103,6 +107,91 @@ X-Tenant-ID: acme
 When hosted auth is enabled, the bearer credential determines the tenant. If an `X-Tenant-ID` header is also supplied, it must match the credential or the request is rejected.
 
 The admin provisioning endpoint returns 404 when no `ADMIN_TOKEN` is configured so it is not accidentally exposed in an unconfigured deployment.
+
+## GitHub App setup for hosted mode
+
+Hosted mode does not use a shared customer GitHub token. Each tenant binds a verified GitHub App installation and the backend mints short-lived installation access tokens.
+
+Configure the GitHub App with:
+
+```text
+Request user authorization (OAuth) during installation: enabled
+
+Callback URL:
+https://<host>/api/v1/onboarding/github/callback
+
+Webhook URL:
+https://<host>/api/v1/github/webhook
+
+Repository permissions:
+Contents       read
+Pull requests  read
+Issues         read/write
+Checks         read/write
+
+Webhook events:
+Pull request
+Installation
+```
+
+Set the backend secrets:
+
+```bash
+export GITHUB_APP_CLIENT_ID='Iv1....'
+export GITHUB_APP_CLIENT_SECRET='...'
+export GITHUB_APP_PRIVATE_KEY='-----BEGIN RSA PRIVATE KEY-----\n...'
+export GITHUB_APP_SLUG='your-app-slug'
+export GITHUB_WEBHOOK_SECRET='long-random-webhook-secret'
+export GITHUB_API_VERSION='2026-03-10'
+```
+
+Start installation with the tenant API token:
+
+```http
+POST /api/v1/onboarding/github/install
+Authorization: Bearer br_api_...
+X-Tenant-ID: acme
+```
+
+The response contains an `installUrl`. Send the user there. A high-entropy one-time `state` value binds the flow to the tenant.
+
+After GitHub OAuth returns to the callback, the backend exchanges the code for a user token and lists installations that GitHub says the user can access. The callback never trusts a raw `installation_id` from a browser redirect.
+
+If exactly one installation is visible, it is bound automatically. If multiple are visible, the callback returns candidates and one can be claimed with:
+
+```http
+POST /api/v1/onboarding/github/installations/{installationId}/claim
+Authorization: Bearer br_api_...
+X-Tenant-ID: acme
+```
+
+List bound installations:
+
+```http
+GET /api/v1/onboarding/github/installations
+Authorization: Bearer br_api_...
+X-Tenant-ID: acme
+```
+
+For `pull_request` actions `opened`, `synchronize`, and `reopened`, a valid signed webhook automatically:
+
+```text
+installation id
+   ↓ tenant binding
+short-lived installation token
+   ↓
+PR diff + base/head source
+   ↓
+blast-radius analysis
+   ↓
+update one bot-owned PR comment
+   +
+create a neutral "PR Blast Radius" check
+```
+
+Webhook payloads are verified against the raw request bytes with `X-Hub-Signature-256` / HMAC-SHA256. Delivery IDs are persisted so completed deliveries are idempotent; failed deliveries can be retried.
+
+The check is deliberately `neutral`. Missing findings are not converted into a pass/safe verdict.
 
 ## Tenant isolation
 
@@ -259,11 +348,13 @@ export METADATA_CLEANUP_INTERVAL_MS=3600000
 
 Trace lineage intentionally stores only identifiers and low-cardinality metadata required for causality: trace/span IDs, parent linkage, service names, span kind, normalized endpoint identity, target service, and timestamp. Request/response payloads and arbitrary span attribute bags are not persisted.
 
-GitHub write access:
+Local / legacy GitHub access when `TENANT_AUTH_ENABLED=false`:
 
 ```bash
 export GITHUB_TOKEN=...
 ```
+
+Hosted mode should instead configure the GitHub App variables above. When tenant authentication is enabled, hosted PR analysis requires a bound installation and does not fall back to the shared `GITHUB_TOKEN`.
 
 ## Evidence coverage
 

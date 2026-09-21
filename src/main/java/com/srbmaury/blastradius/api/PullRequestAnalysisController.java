@@ -1,15 +1,17 @@
 package com.srbmaury.blastradius.api;
 
-import com.srbmaury.blastradius.catalog.RepositoryServiceCatalog;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
+import com.srbmaury.blastradius.github.GitHubInstallationStore;
+import com.srbmaury.blastradius.github.GitHubInstallationTokenService;
 import com.srbmaury.blastradius.github.GitHubPullRequestClient;
 import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
-import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
+import com.srbmaury.blastradius.service.PullRequestAnalysisOrchestrator;
 import com.srbmaury.blastradius.tenant.TenantAccessResolver;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
@@ -26,32 +29,41 @@ import java.util.Map;
 @RequestMapping("/api/v1/pr")
 public class PullRequestAnalysisController {
 
-    private static final String TENANT_HEADER = "X-Tenant-ID";
+    private static final String TENANT_HEADER =
+            "X-Tenant-ID";
 
+    private final PullRequestAnalysisOrchestrator orchestrator;
     private final GitHubPullRequestClient githubClient;
+    private final GitHubInstallationStore installationStore;
+    private final GitHubInstallationTokenService
+            installationTokenService;
     private final PullRequestDiffParser diffParser;
     private final ImpactAnalysisService impactAnalysisService;
     private final ImpactReportFormatter reportFormatter;
-    private final RepositoryServiceCatalog serviceCatalog;
-    private final SourceAwarePullRequestEnricher sourceAwareEnricher;
     private final TenantAccessResolver tenantAccessResolver;
 
     public PullRequestAnalysisController(
+            PullRequestAnalysisOrchestrator orchestrator,
             GitHubPullRequestClient githubClient,
+            GitHubInstallationStore installationStore,
+            GitHubInstallationTokenService
+                    installationTokenService,
             PullRequestDiffParser diffParser,
             ImpactAnalysisService impactAnalysisService,
             ImpactReportFormatter reportFormatter,
-            RepositoryServiceCatalog serviceCatalog,
-            SourceAwarePullRequestEnricher sourceAwareEnricher,
             TenantAccessResolver tenantAccessResolver
     ) {
+        this.orchestrator = orchestrator;
         this.githubClient = githubClient;
+        this.installationStore = installationStore;
+        this.installationTokenService =
+                installationTokenService;
         this.diffParser = diffParser;
-        this.impactAnalysisService = impactAnalysisService;
+        this.impactAnalysisService =
+                impactAnalysisService;
         this.reportFormatter = reportFormatter;
-        this.serviceCatalog = serviceCatalog;
-        this.sourceAwareEnricher = sourceAwareEnricher;
-        this.tenantAccessResolver = tenantAccessResolver;
+        this.tenantAccessResolver =
+                tenantAccessResolver;
     }
 
     @GetMapping("/{owner}/{repo}/{number}/changes")
@@ -68,54 +80,56 @@ public class PullRequestAnalysisController {
                     required = false
             ) String authorization
     ) {
-        tenantAccessResolver.resolveApiTenant(
-                authorization,
-                tenantId
-        );
+        String tenant =
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                );
 
-        return analyzeGitHubPullRequestInternal(
+        return orchestrator.loadChangeSet(
                 owner,
                 repo,
-                number
+                number,
+                githubAccessToken(
+                        tenant,
+                        owner
+                )
         );
     }
 
     @GetMapping("/{owner}/{repo}/{number}/impact")
-    public ImpactAnalysisResponse analyzeGitHubPullRequestImpact(
-            @PathVariable String owner,
-            @PathVariable String repo,
-            @PathVariable long number,
-            @RequestParam(required = false) String service,
-            @RequestHeader(
-                    value = TENANT_HEADER,
-                    required = false
-            ) String tenantId,
-            @RequestHeader(
-                    value = HttpHeaders.AUTHORIZATION,
-                    required = false
-            ) String authorization
-    ) {
-        String tenant = tenantAccessResolver.resolveApiTenant(
-                authorization,
-                tenantId
-        );
-        PullRequestChangeSet changeSet =
-                analyzeGitHubPullRequestInternal(
-                        owner,
-                        repo,
-                        number
+    public ImpactAnalysisResponse
+            analyzeGitHubPullRequestImpact(
+                    @PathVariable String owner,
+                    @PathVariable String repo,
+                    @PathVariable long number,
+                    @RequestParam(required = false)
+                    String service,
+                    @RequestHeader(
+                            value = TENANT_HEADER,
+                            required = false
+                    ) String tenantId,
+                    @RequestHeader(
+                            value = HttpHeaders.AUTHORIZATION,
+                            required = false
+                    ) String authorization
+            ) {
+        String tenant =
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
                 );
 
-        String resolvedService = resolveService(
+        return orchestrator.analyze(
                 tenant,
-                owner + "/" + repo,
-                service
-        );
-
-        return impactAnalysisService.analyze(
-                tenant,
-                changeSet,
-                resolvedService
+                owner,
+                repo,
+                number,
+                service,
+                githubAccessToken(
+                        tenant,
+                        owner
+                )
         );
     }
 
@@ -124,7 +138,8 @@ public class PullRequestAnalysisController {
             @PathVariable String owner,
             @PathVariable String repo,
             @PathVariable long number,
-            @RequestParam(required = false) String service,
+            @RequestParam(required = false)
+            String service,
             @RequestHeader(
                     value = TENANT_HEADER,
                     required = false
@@ -134,30 +149,46 @@ public class PullRequestAnalysisController {
                     required = false
             ) String authorization
     ) {
-        String tenant = tenantAccessResolver.resolveApiTenant(
-                authorization,
-                tenantId
-        );
-        PullRequestChangeSet changeSet =
-                analyzeGitHubPullRequestInternal(
-                        owner,
-                        repo,
-                        number
+        String tenant =
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
                 );
-        String resolvedService = resolveService(
-                tenant,
-                owner + "/" + repo,
-                service
-        );
-        ImpactAnalysisResponse response =
-                impactAnalysisService.analyze(
+        String githubToken =
+                githubAccessToken(
                         tenant,
-                        changeSet,
-                        resolvedService
+                        owner
                 );
 
-        String report = reportFormatter.toMarkdown(response);
-        githubClient.postComment(owner, repo, number, report);
+        ImpactAnalysisResponse response =
+                orchestrator.analyze(
+                        tenant,
+                        owner,
+                        repo,
+                        number,
+                        service,
+                        githubToken
+                );
+
+        String report =
+                reportFormatter.toMarkdown(response);
+
+        if (githubToken == null) {
+            githubClient.postComment(
+                    owner,
+                    repo,
+                    number,
+                    report
+            );
+        } else {
+            githubClient.upsertReportComment(
+                    owner,
+                    repo,
+                    number,
+                    report,
+                    githubToken
+            );
+        }
 
         return Map.of(
                 "posted",
@@ -188,31 +219,42 @@ public class PullRequestAnalysisController {
                 authorization,
                 tenantId
         );
-        return diffParser.parse("raw-diff", diff);
+
+        return diffParser.parse(
+                "raw-diff",
+                diff
+        );
     }
 
     @PostMapping(
             path = "/diff/impact",
             consumes = MediaType.TEXT_PLAIN_VALUE
     )
-    public ImpactAnalysisResponse analyzeRawDiffImpact(
-            @RequestBody String diff,
-            @RequestParam(required = false) String service,
-            @RequestHeader(
-                    value = TENANT_HEADER,
-                    required = false
-            ) String tenantId,
-            @RequestHeader(
-                    value = HttpHeaders.AUTHORIZATION,
-                    required = false
-            ) String authorization
-    ) {
-        String tenant = tenantAccessResolver.resolveApiTenant(
-                authorization,
-                tenantId
-        );
+    public ImpactAnalysisResponse
+            analyzeRawDiffImpact(
+                    @RequestBody String diff,
+                    @RequestParam(required = false)
+                    String service,
+                    @RequestHeader(
+                            value = TENANT_HEADER,
+                            required = false
+                    ) String tenantId,
+                    @RequestHeader(
+                            value = HttpHeaders.AUTHORIZATION,
+                            required = false
+                    ) String authorization
+            ) {
+        String tenant =
+                tenantAccessResolver.resolveApiTenant(
+                        authorization,
+                        tenantId
+                );
+
         PullRequestChangeSet changeSet =
-                diffParser.parse("raw-diff", diff);
+                diffParser.parse(
+                        "raw-diff",
+                        diff
+                );
 
         return impactAnalysisService.analyze(
                 tenant,
@@ -221,57 +263,29 @@ public class PullRequestAnalysisController {
         );
     }
 
-    private PullRequestChangeSet analyzeGitHubPullRequestInternal(
-            String owner,
-            String repo,
-            long number
-    ) {
-        validateRepositoryPart(owner);
-        validateRepositoryPart(repo);
-
-        String diff = githubClient.fetchDiff(
-                owner,
-                repo,
-                number
-        );
-        PullRequestChangeSet initial = diffParser.parse(
-                owner + "/" + repo + "#" + number,
-                diff
-        );
-
-        return sourceAwareEnricher.enrich(
-                owner,
-                repo,
-                number,
-                diff,
-                initial
-        );
-    }
-
-    private String resolveService(
+    private String githubAccessToken(
             String tenantId,
-            String repository,
-            String explicitService
+            String owner
     ) {
-        if (explicitService != null
-                && !explicitService.isBlank()) {
-            return explicitService.trim();
+        if (!tenantAccessResolver.isAuthEnabled()) {
+            return null;
         }
 
-        return serviceCatalog.find(
-                        tenantId,
-                        repository
-                )
-                .map(mapping -> mapping.service())
-                .orElse(null);
-    }
+        var installation =
+                installationStore
+                        .findActiveForTenantAndAccount(
+                                tenantId,
+                                owner
+                        )
+                        .orElseThrow(() ->
+                                new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "GitHub App is not installed for repository owner "
+                                                + owner
+                                ));
 
-    private void validateRepositoryPart(String value) {
-        if (value == null
-                || !value.matches("[A-Za-z0-9_.-]+")) {
-            throw new IllegalArgumentException(
-                    "Invalid GitHub owner or repository name"
-            );
-        }
+        return installationTokenService.tokenFor(
+                installation.installationId()
+        );
     }
 }

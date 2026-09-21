@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SourceAwarePullRequestEnricherTest {
@@ -286,5 +287,98 @@ class SourceAwarePullRequestEnricherTest {
                             .isEqualTo("OpenFeign");
                 });
     }
+
+
+    @Test
+    void installationTokenScopesRevisionAndSourceFetches() {
+        GitHubPullRequestClient github =
+                mock(GitHubPullRequestClient.class);
+
+        String source = sourceWithBody(
+                "return service.create(request);"
+        );
+        int line = lineOf(
+                source,
+                "return service.create(request);"
+        );
+
+        String diff = """
+                diff --git a/src/main/java/com/acme/orders/OrderController.java b/src/main/java/com/acme/orders/OrderController.java
+                --- a/src/main/java/com/acme/orders/OrderController.java
+                +++ b/src/main/java/com/acme/orders/OrderController.java
+                @@ -%d,1 +%d,1 @@
+                -        return service.createLegacy(request);
+                +        return service.create(request);
+                """.formatted(line, line);
+
+        when(github.fetchRevision(
+                "acme",
+                "orders",
+                45L,
+                "ghs-installation"
+        )).thenReturn(
+                new PullRequestRevision(
+                        "base-sha",
+                        "head-sha"
+                )
+        );
+
+        when(github.fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/orders/OrderController.java",
+                "base-sha",
+                "ghs-installation"
+        )).thenReturn(
+                source.replace(
+                        "service.create(request)",
+                        "service.createLegacy(request)"
+                )
+        );
+
+        when(github.fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/orders/OrderController.java",
+                "head-sha",
+                "ghs-installation"
+        )).thenReturn(source);
+
+        var enricher =
+                new SourceAwarePullRequestEnricher(
+                        github,
+                        new UnifiedDiffLineParser(),
+                        new SpringEndpointOwnershipAnalyzer(),
+                        new StaticOutboundCallAnalyzer(),
+                        new FeignClientDefinitionAnalyzer()
+                );
+
+        enricher.enrich(
+                "acme",
+                "orders",
+                45L,
+                diff,
+                new PullRequestChangeSet(
+                        "acme/orders#45",
+                        List.of()
+                ),
+                "ghs-installation"
+        );
+
+        verify(github).fetchRevision(
+                "acme",
+                "orders",
+                45L,
+                "ghs-installation"
+        );
+        verify(github).fetchFileContent(
+                "acme",
+                "orders",
+                "src/main/java/com/acme/orders/OrderController.java",
+                "head-sha",
+                "ghs-installation"
+        );
+    }
+
 
 }
