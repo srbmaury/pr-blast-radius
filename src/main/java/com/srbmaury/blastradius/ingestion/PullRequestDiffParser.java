@@ -120,19 +120,36 @@ public class PullRequestDiffParser {
         String sql = buffer.toString().replaceAll("\\s+", " ").trim();
         buffer.setLength(0);
 
-        Matcher tableMatcher = ALTER_TABLE.matcher(sql);
-        while (tableMatcher.find()) {
-            String table = cleanIdentifier(tableMatcher.group(1));
-            changes.add(new DetectedChange(
-                    ChangeKind.DATABASE_TABLE,
-                    ChangeOperation.MODIFIED,
-                    table,
-                    file,
-                    tableMatcher.group()
-            ));
-
-            detectColumnChanges(file, table, sql, diffOperation, changes);
+        for (String statement : sql.split(";")) {
+            analyzeSqlStatement(file, statement.trim(), diffOperation, changes);
         }
+    }
+
+    private void analyzeSqlStatement(
+            String file,
+            String statement,
+            ChangeOperation diffOperation,
+            Set<DetectedChange> changes
+    ) {
+        if (statement.isBlank()) {
+            return;
+        }
+
+        Matcher tableMatcher = ALTER_TABLE.matcher(statement);
+        if (!tableMatcher.find()) {
+            return;
+        }
+
+        String table = cleanIdentifier(tableMatcher.group(1));
+        changes.add(new DetectedChange(
+                ChangeKind.DATABASE_TABLE,
+                ChangeOperation.MODIFIED,
+                table,
+                file,
+                tableMatcher.group()
+        ));
+
+        detectColumnChanges(file, table, statement, diffOperation, changes);
     }
 
     private void detectColumnChanges(
