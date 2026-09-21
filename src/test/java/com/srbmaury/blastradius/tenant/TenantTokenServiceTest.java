@@ -53,10 +53,11 @@ class TenantTokenServiceTest {
                 "acme"
         );
 
-        assertThat(persisted.get("API_TOKEN_HASH"))
-                .isNotEqualTo(issued.apiToken());
-        assertThat(persisted.get("INGEST_TOKEN_HASH"))
-                .isNotEqualTo(issued.ingestToken());
+        assertThat(persisted.values())
+                .doesNotContain(
+                        issued.apiToken(),
+                        issued.ingestToken()
+                );
     }
 
     @Test
