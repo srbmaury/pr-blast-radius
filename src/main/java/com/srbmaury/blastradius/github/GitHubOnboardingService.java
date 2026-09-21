@@ -180,6 +180,16 @@ public class GitHubOnboardingService {
                 .orElseThrow();
     }
 
+
+    public List<GitHubInstallationInfo> candidates(
+            String tenantId
+    ) {
+        return candidateStore.allValid(
+                TenantIds.normalize(tenantId),
+                Instant.now()
+        );
+    }
+
     public List<GitHubInstallationInfo> installations(
             String tenantId
     ) {

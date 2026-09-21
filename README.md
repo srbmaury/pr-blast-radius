@@ -47,12 +47,53 @@ Findings are evidence-based:
 - Installation-scoped GitHub tokens for hosted PR reads/writes
 - Signed, idempotent GitHub webhooks for automatic PR analysis
 - Updatable bot-owned PR report comment plus neutral GitHub Check
+- Same-origin customer dashboard for GitHub onboarding, repository mapping, telemetry status, and manual PR analysis
 - Automatic service resolution for GitHub PR analysis
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
 - Evidence coverage states for PostgreSQL and runtime-service telemetry
 - Explicit warnings when missing telemetry prevents a trustworthy safety conclusion
+
+## Customer dashboard
+
+The Spring Boot app serves the first customer-facing workspace at:
+
+```text
+/
+```
+
+The dashboard uses the existing authenticated APIs rather than a separate frontend backend. It supports the complete first-run workflow:
+
+```text
+tenant/API credentials
+        ↓
+connect verified GitHub App installation
+        ↓
+map repository → runtime service
+        ↓
+copy OTLP/HTTP JSON ingestion command
+        ↓
+observe runtime service edges
+        ↓
+analyze a PR and inspect evidence coverage
+```
+
+Hosted customers enter the tenant API token and optional ingestion token into the browser session. The UI stores these values in `sessionStorage`, not persistent `localStorage`, and provides a “Forget credentials” action.
+
+The main dashboard has a same-origin Content Security Policy and renders API-provided repository, service, finding, and coverage values with text nodes rather than HTML injection.
+
+GitHub installation opens in a popup when available. The OAuth callback notifies the dashboard and closes itself. The dashboard also polls the authenticated installation/candidate APIs during onboarding so the flow still completes if the browser severs the popup opener relationship.
+
+If GitHub verifies multiple accessible App installations, the dashboard renders those verified candidates and lets the tenant explicitly claim one. The raw installation id returned by a browser redirect is never trusted.
+
+The overview shows **connection state**, not a deployment safety score:
+
+- active GitHub App installation
+- repository/service mapping count
+- observed runtime dependency edge count
+
+The PR analysis view renders evidence coverage alongside findings. An empty finding list explicitly tells the user to inspect coverage instead of presenting a safe/pass conclusion.
 
 ## Hosted tenant authentication
 

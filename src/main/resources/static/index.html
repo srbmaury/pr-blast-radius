@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PR Blast Radius customer dashboard">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
+  <title>PR Blast Radius</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <div id="credentialGate" class="gate">
+    <form id="credentialForm" class="gate-card">
+      <div class="brand-lockup">
+        <div class="brand-mark">BR</div>
+        <div>
+          <p class="eyebrow">Production change intelligence</p>
+          <h1>PR Blast Radius</h1>
+        </div>
+      </div>
+
+      <p class="gate-copy">
+        Connect this browser session to a tenant. Credentials stay in
+        <strong>sessionStorage</strong> and are cleared when you choose
+        “Forget credentials”.
+      </p>
+
+      <label class="field">
+        <span>Tenant ID</span>
+        <input id="tenantInput" name="tenant" autocomplete="organization"
+               placeholder="acme" required>
+      </label>
+
+      <label class="field">
+        <span>API token <em>hosted mode</em></span>
+        <input id="apiTokenInput" name="apiToken" type="password"
+               autocomplete="off" placeholder="br_api_...">
+      </label>
+
+      <label class="field">
+        <span>Telemetry ingestion token <em>optional</em></span>
+        <input id="ingestTokenInput" name="ingestToken" type="password"
+               autocomplete="off" placeholder="br_ingest_...">
+      </label>
+
+      <button class="button primary full" type="submit">Open workspace</button>
+      <p class="hint">
+        Local development can use tenant <code>default</code> with an empty API token
+        when tenant authentication is disabled.
+      </p>
+    </form>
+  </div>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-lockup compact">
+        <div class="brand-mark">BR</div>
+        <div>
+          <strong>PR Blast Radius</strong>
+          <span id="tenantBadge" class="tenant-badge">default</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Workspace sections">
+        <a href="#overview" class="nav-link active">Overview</a>
+        <a href="#github" class="nav-link">GitHub</a>
+        <a href="#repositories" class="nav-link">Repositories</a>
+        <a href="#telemetry" class="nav-link">Telemetry</a>
+        <a href="#analyze" class="nav-link">Analyze PR</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="small muted">Credentials are session-only.</span>
+        <button id="forgetButton" class="text-button" type="button">
+          Forget credentials
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Customer workspace</p>
+          <h2>Production evidence setup</h2>
+        </div>
+        <button id="refreshButton" class="button ghost" type="button">
+          Refresh
+        </button>
+      </header>
+
+      <section id="overview" class="section">
+        <div class="section-heading">
+          <div>
+            <h3>Overview</h3>
+            <p>What is connected right now—not a deployment safety score.</p>
+          </div>
+          <div id="setupProgress" class="progress-pill">0 / 3 connected</div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <span class="metric-label">GitHub App</span>
+            <strong id="githubMetric" class="metric-value">Checking…</strong>
+            <span id="githubMetricDetail" class="metric-detail">Installation status</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Repository mappings</span>
+            <strong id="repoMetric" class="metric-value">Checking…</strong>
+            <span class="metric-detail">Repository → runtime service</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Runtime edges</span>
+            <strong id="edgeMetric" class="metric-value">Checking…</strong>
+            <span id="edgeMetricDetail" class="metric-detail">Observed telemetry</span>
+          </article>
+        </div>
+
+        <div class="notice">
+          <strong>Trust model:</strong>
+          An empty impact report is not treated as proof that a change is safe.
+          The report includes evidence coverage so missing telemetry remains visible.
+        </div>
+      </section>
+
+      <section id="github" class="section panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h3>Connect GitHub</h3>
+            <p>Install the GitHub App on the repositories you want analyzed.</p>
+          </div>
+          <button id="connectGitHubButton" class="button primary" type="button">
+            Connect GitHub
+          </button>
+        </div>
+
+        <div id="githubInstallations" class="stack-list empty-state">
+          No bound installations yet.
+        </div>
+
+        <div id="candidatePanel" class="candidate-panel hidden">
+          <div>
+            <strong>Choose a verified installation</strong>
+            <p>GitHub found more than one installation your user can access.</p>
+          </div>
+          <div id="candidateList" class="stack-list"></div>
+        </div>
+      </section>
+
+      <section id="repositories" class="section panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h3>Map repositories to runtime services</h3>
+            <p>This lets a PR in <code>acme/orders</code> correlate with <code>orders-service</code>.</p>
+          </div>
+        </div>
+
+        <form id="mappingForm" class="inline-form">
+          <label class="field grow">
+            <span>Repository</span>
+            <input id="repositoryInput" placeholder="acme/orders" required>
+          </label>
+          <label class="field grow">
+            <span>Runtime service</span>
+            <input id="serviceInput" placeholder="orders-service" required>
+          </label>
+          <button class="button primary form-button" type="submit">Save mapping</button>
+        </form>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th>Runtime service</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mappingRows">
+              <tr><td colspan="4" class="muted">No mappings yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="telemetry" class="section panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Step 3</p>
+            <h3>Send OpenTelemetry traces</h3>
+            <p>Runtime edges and trace ancestry make the blast radius production-aware.</p>
+          </div>
+        </div>
+
+        <div class="telemetry-grid">
+          <div class="code-card">
+            <div class="code-card-header">
+              <span>OTLP/HTTP JSON trace endpoint</span>
+              <button id="copyTelemetryButton" class="text-button" type="button">Copy</button>
+            </div>
+            <pre id="telemetrySnippet"></pre>
+          </div>
+
+          <div class="telemetry-summary">
+            <div>
+              <span class="metric-label">Observed services</span>
+              <strong id="serviceCount" class="metric-value small-value">0</strong>
+            </div>
+            <div>
+              <span class="metric-label">Last runtime edge</span>
+              <strong id="lastEdge" class="metric-value small-value">No data</strong>
+            </div>
+          </div>
+        </div>
+
+        <div id="dependencyList" class="stack-list compact-list empty-state">
+          No runtime dependency edges observed yet.
+        </div>
+      </section>
+
+      <section id="analyze" class="section panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Use it now</p>
+            <h3>Analyze a pull request</h3>
+            <p>Automatic webhook analysis runs on new/updated PRs; this form is useful for an explicit re-check.</p>
+          </div>
+        </div>
+
+        <form id="analysisForm" class="analysis-form">
+          <label class="field grow">
+            <span>Repository</span>
+            <input id="analysisRepo" placeholder="acme/orders" required>
+          </label>
+          <label class="field short">
+            <span>PR number</span>
+            <input id="analysisNumber" type="number" min="1" placeholder="42" required>
+          </label>
+          <label class="field grow">
+            <span>Service override <em>optional</em></span>
+            <input id="analysisService" placeholder="orders-canary">
+          </label>
+          <button class="button primary form-button" type="submit">Analyze</button>
+        </form>
+
+        <div id="analysisLoading" class="loading hidden">Analyzing PR and production evidence…</div>
+
+        <div id="analysisResult" class="analysis-result hidden">
+          <div class="result-summary">
+            <div>
+              <span class="metric-label">Detected changes</span>
+              <strong id="changeCount" class="metric-value small-value">0</strong>
+            </div>
+            <div>
+              <span class="metric-label">Evidence findings</span>
+              <strong id="findingCount" class="metric-value small-value">0</strong>
+            </div>
+          </div>
+
+          <div class="result-block">
+            <h4>Evidence coverage</h4>
+            <div id="coverageList" class="coverage-grid"></div>
+          </div>
+
+          <div class="result-block">
+            <h4>Production evidence</h4>
+            <div id="findingList" class="stack-list"></div>
+          </div>
+
+          <div class="result-block">
+            <h4>Detected changes</h4>
+            <div id="changeList" class="stack-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        PR Blast Radius · deterministic evidence first · AI not required
+      </footer>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
