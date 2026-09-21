@@ -43,7 +43,8 @@ public class EvidenceCoverageService {
                 postgresCoverage(changeSet, findings),
                 runtimeCoverage(rootService),
                 endpointCoverage(changeSet, rootService),
-                tracePathCoverage(changeSet, rootService)
+                tracePathCoverage(changeSet, rootService),
+                staticOutboundCoverage(changeSet)
         );
     }
 
@@ -233,6 +234,38 @@ public class EvidenceCoverageService {
                     "Trace lineage metadata store is unavailable"
             );
         }
+    }
+
+    private EvidenceCoverage staticOutboundCoverage(
+            PullRequestChangeSet changeSet
+    ) {
+        boolean hasEndpointChange = changeSet.changes().stream()
+                .anyMatch(change ->
+                        change.kind() == ChangeKind.API_ENDPOINT);
+
+        if (!hasEndpointChange) {
+            return new EvidenceCoverage(
+                    EvidenceSource.STATIC_OUTBOUND,
+                    EvidenceStatus.NOT_APPLICABLE,
+                    "PR contains no resolved API endpoint change"
+            );
+        }
+
+        if (changeSet.staticOutboundCalls().isEmpty()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.STATIC_OUTBOUND,
+                    EvidenceStatus.NO_DATA,
+                    "No supported literal outbound API call was resolved from the changed Java source"
+            );
+        }
+
+        return new EvidenceCoverage(
+                EvidenceSource.STATIC_OUTBOUND,
+                EvidenceStatus.AVAILABLE,
+                "Resolved "
+                        + changeSet.staticOutboundCalls().size()
+                        + " static outbound API dependency call(s)"
+        );
     }
 
     private EvidenceCoverage runtimeCoverage(String rootService) {
