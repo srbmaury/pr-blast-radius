@@ -182,6 +182,57 @@ public class FeignClientDefinitionAnalyzer {
     private List<String> classPaths(
             ClassOrInterfaceDeclaration type
     ) {
+        List<String> feignPaths = feignClientPaths(type);
+        List<String> requestPaths = requestMappingPaths(type);
+
+        List<String> combined = new ArrayList<>();
+
+        for (String feignPath : feignPaths) {
+            for (String requestPath : requestPaths) {
+                combined.add(combinePaths(
+                        feignPath,
+                        requestPath
+                ));
+            }
+        }
+
+        return combined.isEmpty()
+                ? List.of("/")
+                : List.copyOf(combined);
+    }
+
+    private List<String> feignClientPaths(
+            ClassOrInterfaceDeclaration type
+    ) {
+        for (AnnotationExpr annotation : type.getAnnotations()) {
+            if (!"FeignClient".equals(
+                    annotation.getNameAsString()
+            ) || !annotation.isNormalAnnotationExpr()) {
+                continue;
+            }
+
+            for (MemberValuePair pair :
+                    annotation.asNormalAnnotationExpr().getPairs()) {
+                if (!"path".equals(pair.getNameAsString())) {
+                    continue;
+                }
+
+                List<String> paths = literalStrings(
+                        pair.getValue()
+                );
+
+                return paths.isEmpty()
+                        ? List.of()
+                        : paths;
+            }
+        }
+
+        return List.of("/");
+    }
+
+    private List<String> requestMappingPaths(
+            ClassOrInterfaceDeclaration type
+    ) {
         for (AnnotationExpr annotation : type.getAnnotations()) {
             if ("RequestMapping".equals(
                     annotation.getNameAsString()
