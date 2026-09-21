@@ -3,9 +3,12 @@ package com.srbmaury.blastradius.telemetry;
 import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +19,16 @@ class RuntimeDependencyServiceTest {
 
     @BeforeEach
     void setUp() {
-        store = new RuntimeDependencyStore();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        store = new RuntimeDependencyStore(jdbcTemplate);
+        store.initialize();
         service = new RuntimeDependencyService(store);
     }
 
