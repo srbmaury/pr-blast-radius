@@ -239,15 +239,29 @@ public class EvidenceCoverageService {
     private EvidenceCoverage staticOutboundCoverage(
             PullRequestChangeSet changeSet
     ) {
-        boolean hasEndpointChange = changeSet.changes().stream()
-                .anyMatch(change ->
-                        change.kind() == ChangeKind.API_ENDPOINT);
+        if (!changeSet.staticOutboundCalls().isEmpty()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.STATIC_OUTBOUND,
+                    EvidenceStatus.AVAILABLE,
+                    "Resolved "
+                            + changeSet.staticOutboundCalls().size()
+                            + " static outbound API dependency call(s)"
+            );
+        }
 
-        if (!hasEndpointChange) {
+        boolean hasJavaChange = changeSet.changes().stream()
+                .anyMatch(change ->
+                        (change.file() != null
+                                && change.file().endsWith(".java"))
+                                || (change.kind() == ChangeKind.FILE
+                                        && change.identifier() != null
+                                        && change.identifier().endsWith(".java")));
+
+        if (!hasJavaChange) {
             return new EvidenceCoverage(
                     EvidenceSource.STATIC_OUTBOUND,
                     EvidenceStatus.NOT_APPLICABLE,
-                    "PR contains no resolved API endpoint change"
+                    "PR contains no detected Java source change"
             );
         }
 
@@ -261,10 +275,8 @@ public class EvidenceCoverageService {
 
         return new EvidenceCoverage(
                 EvidenceSource.STATIC_OUTBOUND,
-                EvidenceStatus.AVAILABLE,
-                "Resolved "
-                        + changeSet.staticOutboundCalls().size()
-                        + " static outbound API dependency call(s)"
+                EvidenceStatus.NO_DATA,
+                "No supported literal outbound API call was resolved from the changed Java source"
         );
     }
 
