@@ -36,7 +36,8 @@ public class EvidenceCoverageService {
     ) {
         return List.of(
                 postgresCoverage(changeSet, findings),
-                runtimeCoverage(rootService)
+                runtimeCoverage(rootService),
+                endpointCoverage(changeSet, rootService)
         );
     }
 
@@ -80,6 +81,92 @@ public class EvidenceCoverageService {
                 EvidenceStatus.AVAILABLE,
                 "Matching runtime SQL evidence was found"
         );
+    }
+
+    private EvidenceCoverage endpointCoverage(
+            PullRequestChangeSet changeSet,
+            String rootService
+    ) {
+        List<String> changedEndpoints = changeSet.changes().stream()
+                .filter(change -> change.kind() == ChangeKind.API_ENDPOINT)
+                .map(change -> change.identifier())
+                .distinct()
+                .toList();
+
+        if (changedEndpoints.isEmpty()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.ENDPOINT_RUNTIME,
+                    EvidenceStatus.NOT_APPLICABLE,
+                    "PR contains no detected Spring endpoint mapping change"
+            );
+        }
+
+        if (rootService == null || rootService.isBlank()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.ENDPOINT_RUNTIME,
+                    EvidenceStatus.NOT_CONFIGURED,
+                    "Endpoint filtering requires a repository-to-runtime-service mapping"
+            );
+        }
+
+        try {
+            var callers = runtimeDependencyService.directCallers(rootService);
+
+            if (callers.isEmpty()) {
+                return new EvidenceCoverage(
+                        EvidenceSource.ENDPOINT_RUNTIME,
+                        EvidenceStatus.NO_DATA,
+                        "No direct caller telemetry exists for " + rootService
+                );
+            }
+
+            long routeAware = callers.stream()
+                    .filter(edge -> edge.endpoint() != null)
+                    .filter(edge -> !"*".equals(edge.endpoint()))
+                    .count();
+
+            if (routeAware == 0) {
+                return new EvidenceCoverage(
+                        EvidenceSource.ENDPOINT_RUNTIME,
+                        EvidenceStatus.UNAVAILABLE,
+                        "Caller telemetry exists, but endpoint identity is missing on every direct edge"
+                );
+            }
+
+            long matching = callers.stream()
+                    .filter(edge -> changedEndpoints.contains(edge.endpoint()))
+                    .count();
+
+            if (matching > 0) {
+                return new EvidenceCoverage(
+                        EvidenceSource.ENDPOINT_RUNTIME,
+                        EvidenceStatus.AVAILABLE,
+                        "Matched "
+                                + matching
+                                + " direct caller edge(s) to changed endpoint(s): "
+                                + String.join(", ", changedEndpoints)
+                );
+            }
+
+            long unknown = callers.size() - routeAware;
+            String suffix = unknown > 0
+                    ? "; " + unknown + " direct caller edge(s) lack endpoint identity"
+                    : "";
+
+            return new EvidenceCoverage(
+                    EvidenceSource.ENDPOINT_RUNTIME,
+                    EvidenceStatus.NO_DATA,
+                    "Route-aware telemetry is available, but no direct caller matched changed endpoint(s): "
+                            + String.join(", ", changedEndpoints)
+                            + suffix
+            );
+        } catch (DataAccessException ex) {
+            return new EvidenceCoverage(
+                    EvidenceSource.ENDPOINT_RUNTIME,
+                    EvidenceStatus.UNAVAILABLE,
+                    "Runtime dependency metadata store is unavailable"
+            );
+        }
     }
 
     private EvidenceCoverage runtimeCoverage(String rootService) {
