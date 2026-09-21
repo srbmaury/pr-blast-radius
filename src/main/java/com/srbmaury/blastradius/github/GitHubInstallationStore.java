@@ -159,6 +159,35 @@ public class GitHubInstallationStore {
         );
     }
 
+
+    public Optional<GitHubInstallationInfo>
+            findActiveForTenantAndAccount(
+                    String tenantId,
+                    String accountLogin
+            ) {
+        return jdbcTemplate.query(
+                """
+                SELECT installation_id,
+                       account_login,
+                       account_type,
+                       status
+                FROM github_installation
+                WHERE tenant_id = ?
+                  AND LOWER(account_login) = LOWER(?)
+                  AND status = 'ACTIVE'
+                ORDER BY updated_at DESC
+                """,
+                (rs, rowNum) -> new GitHubInstallationInfo(
+                        rs.getLong("installation_id"),
+                        rs.getString("account_login"),
+                        rs.getString("account_type"),
+                        rs.getString("status")
+                ),
+                TenantIds.normalize(tenantId),
+                accountLogin
+        ).stream().findFirst();
+    }
+
     public void markInactive(long installationId) {
         jdbcTemplate.update(
                 """
