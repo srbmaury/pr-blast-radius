@@ -129,4 +129,82 @@ class RuntimeDependencyServiceTest {
                 .extracting(edge -> edge.targetService())
                 .containsExactly("orders-service");
     }
+
+    @Test
+    void buildsCallerAndDependencyBlastRadius() {
+        Instant observedAt = Instant.parse("2026-09-21T10:00:00Z");
+
+        service.ingest(List.of(
+                new OpenTelemetrySpanObservation(
+                        "frontend-service",
+                        "checkout-service",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "checkout-service",
+                        "orders-service",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "orders-service",
+                        "payment-service",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "payment-service",
+                        "ledger-service",
+                        "CLIENT",
+                        observedAt
+                )
+        ));
+
+        var radius = service.blastRadius("orders-service", 2);
+
+        assertThat(radius.callers())
+                .extracting(edge -> edge.sourceService() + "->" + edge.targetService())
+                .containsExactlyInAnyOrder(
+                        "checkout-service->orders-service",
+                        "frontend-service->checkout-service"
+                );
+
+        assertThat(radius.dependencies())
+                .extracting(edge -> edge.sourceService() + "->" + edge.targetService())
+                .containsExactlyInAnyOrder(
+                        "orders-service->payment-service",
+                        "payment-service->ledger-service"
+                );
+    }
+
+    @Test
+    void callerTraversalIsCycleSafe() {
+        Instant observedAt = Instant.parse("2026-09-21T10:00:00Z");
+
+        service.ingest(List.of(
+                new OpenTelemetrySpanObservation(
+                        "checkout-service",
+                        "orders-service",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "orders-service",
+                        "checkout-service",
+                        "CLIENT",
+                        observedAt
+                )
+        ));
+
+        var callers = service.callers("orders-service", 5);
+
+        assertThat(callers.edges())
+                .extracting(edge -> edge.sourceService() + "->" + edge.targetService())
+                .containsExactlyInAnyOrder(
+                        "checkout-service->orders-service",
+                        "orders-service->checkout-service"
+                );
+    }
+
 }
