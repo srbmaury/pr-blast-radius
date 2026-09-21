@@ -446,7 +446,19 @@ public class StaticOutboundCallAnalyzer {
                 variable.getInitializer().ifPresent(initializer -> {
                     for (MethodCallExpr call :
                             initializer.findAll(MethodCallExpr.class)) {
-                        if (!"baseUrl".equals(call.getNameAsString())
+                        boolean baseUrlCall =
+                                "baseUrl".equals(call.getNameAsString());
+
+                        boolean createCall =
+                                "create".equals(call.getNameAsString())
+                                        && call.getScope()
+                                                .map(Expression::toString)
+                                                .map(scope ->
+                                                        "RestClient".equals(scope)
+                                                                || "WebClient".equals(scope))
+                                                .orElse(false);
+
+                        if ((!baseUrlCall && !createCall)
                                 || call.getArguments().isEmpty()) {
                             continue;
                         }
