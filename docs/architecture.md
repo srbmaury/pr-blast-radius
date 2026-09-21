@@ -13,7 +13,16 @@ GitHub PR                       |
    v                            v
 PR Diff Ingestor                 service resolution
    |                            |
-   +--> Spring endpoint changes |
+   +--> changed line ranges     |
+   |         |                  |
+   |         v                  |
+   |   base/head Java source    |
+   |         |                  |
+   |         v                  |
+   |    JavaParser AST          |
+   |         |                  |
+   |         v                  |
+   |   owning Spring endpoint   |
    |                            |
    +----------+-----------------+
               |
@@ -99,6 +108,37 @@ frontend -> checkout -> orders -> payment -> ledger
 
 Reverse traversal finds services that depend on the changed service. Forward traversal finds dependencies that the changed service invokes. Both directions are depth-limited and cycle-safe.
 
+## Source-aware endpoint ownership
+
+GitHub PR analysis parses unified-diff hunk coordinates into old and new changed line numbers.
+
+For changed Java files, the analyzer fetches both revisions:
+
+```text
+base SHA -> old file -> old changed lines
+head SHA -> new file -> new changed lines
+```
+
+JavaParser then maps those lines to the enclosing method. Spring class-level and method-level mappings are composed:
+
+```java
+@RequestMapping("/orders")
+class OrderController {
+    @GetMapping("/{id}")
+    Order get(...) { ... }
+}
+```
+
+becomes:
+
+```text
+HTTP GET /orders/{id}
+```
+
+If the same endpoint owns changed lines in both revisions, it is classified as `MODIFIED`. Direct mapping-annotation detection takes precedence for explicit route additions/removals. For deletion-only handler-body edits, the endpoint is conservatively treated as `MODIFIED` when the Java file still exists.
+
+This analysis is intentionally syntax-based rather than symbol-resolution-based. Literal Spring mapping paths are supported; constants, custom composed annotations, and dynamic path construction are currently out of scope.
+
 ## Endpoint-aware caller correlation
 
 Spring mapping changes are normalized as endpoint identities such as:
@@ -142,4 +182,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Map arbitrary Java handler-body changes back to their owning Spring endpoint using source-aware parsing instead of relying only on changed mapping annotation lines.
+Add trace-path causality so the product can correlate an inbound changed endpoint with the specific downstream calls observed within traces for that endpoint, instead of treating every downstream dependency of the service as potentially affected.
