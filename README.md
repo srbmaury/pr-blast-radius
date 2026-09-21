@@ -29,10 +29,11 @@ Findings are evidence-based:
 - Statement-scoped SQL parsing to reduce false positives
 - PostgreSQL runtime query evidence through `pg_stat_statements`
 - Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
+- OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
-- Unit tests for parser precision, runtime DB evidence, graph traversal, and report formatting
+- Unit tests for parser precision, runtime DB evidence, graph traversal, OTLP JSON adaptation, runtime impact, and report formatting
 
 ## PR analysis API
 
@@ -64,40 +65,39 @@ Content-Type: text/plain
 
 ## Runtime telemetry API
 
-The current MVP accepts normalized outbound OpenTelemetry span observations:
+Normalized observations are supported directly:
 
-```http
+```text
 POST /api/v1/telemetry/spans
+```
+
+OTLP/HTTP JSON-shaped trace payloads are also supported:
+
+```text
+POST /api/v1/telemetry/otlp-json/v1/traces
 Content-Type: application/json
 ```
 
-Example:
+The adapter extracts:
 
-```json
-[
-  {
-    "sourceService": "checkout-service",
-    "targetService": "orders-service",
-    "spanKind": "CLIENT",
-    "observedAt": "2026-09-21T10:15:00Z"
-  },
-  {
-    "sourceService": "orders-service",
-    "targetService": "payment-service",
-    "spanKind": "CLIENT",
-    "observedAt": "2026-09-21T10:15:01Z"
-  }
-]
+```text
+resource.attributes["service.name"]
+        +
+span.attributes["peer.service"]
+        +
+CLIENT / PRODUCER span kind
+        ↓
+source-service -> target-service
 ```
 
-Inspect downstream dependencies:
+Only outbound `CLIENT` and `PRODUCER` spans create edges, preventing corresponding server spans from double-counting a call.
+
+Inspect the resulting graph:
 
 ```text
 GET /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
 GET /api/v1/telemetry/dependencies
 ```
-
-Only outbound `CLIENT` and `PRODUCER` observations are counted, preventing the corresponding server span from double-counting the same call.
 
 ## Configuration
 
@@ -112,10 +112,10 @@ For runtime SQL evidence, PostgreSQL must expose `pg_stat_statements`. If it is 
 
 ## Current MVP limitations
 
-- Telemetry ingestion accepts a normalized OpenTelemetry observation format; it is not yet a native OTLP HTTP/protobuf receiver.
-- Runtime dependency edges are currently stored in memory and reset on restart.
+- OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
+- Runtime dependency edges are stored in memory and reset on restart.
 - Repository-to-service ownership is explicit through the `service` parameter; no heuristic mapping is used.
-- Static Java analysis currently detects changed types but does not yet build a full symbol-level call graph.
+- Static Java analysis detects changed types but does not yet build a full symbol-level call graph.
 - Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes are intentionally out of scope.
 
 ## Local development
