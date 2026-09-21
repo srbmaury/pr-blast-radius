@@ -164,7 +164,10 @@ public class OtlpJsonTraceAdapter {
         if (normalized.isBlank()) {
             return "/";
         }
-        return normalized.startsWith("/") ? normalized : "/" + normalized;
+        normalized = normalized.startsWith("/") ? normalized : "/" + normalized;
+        return normalized.length() > 1 && normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1)
+                : normalized;
     }
 
     private Instant parseUnixNano(JsonNode valueNode) {
