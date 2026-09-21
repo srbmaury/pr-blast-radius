@@ -2,55 +2,102 @@
 
 Production-aware impact analysis for backend pull requests.
 
-## MVP
+## Goal
 
 Given a GitHub PR, answer one question:
 
 > What can this change break in production?
 
-The first version intentionally supports only:
+The MVP intentionally supports only:
 
 - GitHub pull requests
-- Java / Spring Boot services
-- PostgreSQL
-- OpenTelemetry service dependencies
+- Java / Spring Boot change detection
+- PostgreSQL migrations and runtime SQL evidence
+- OpenTelemetry-derived service dependencies
 
-Findings are evidence-based, not opaque risk scores:
+Findings are evidence-based:
 
 - **CONFIRMED** — observed in runtime or database telemetry
-- **STRONG** — direct static/code/schema dependency
-- **POSSIBLE** — inferred relationship that needs review
+- **STRONG** — direct static/schema evidence
+- **POSSIBLE** — inferred relationship requiring review
 
 ## Implemented
 
 - GitHub PR diff ingestion
 - Java type change detection
-- PostgreSQL migration detection for table / add / drop / rename column changes
-- Runtime PostgreSQL query evidence through `pg_stat_statements`
-- Evidence-based `CONFIRMED` findings
-- Unit tests for parser precision and runtime DB evidence
+- PostgreSQL table / add / drop / rename column detection
+- Statement-scoped SQL parsing to reduce false positives
+- PostgreSQL runtime query evidence through `pg_stat_statements`
+- Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
+- Combined DB + runtime impact analysis
+- Concise Markdown blast-radius report
+- Explicit API to publish the report as a GitHub PR comment
+- Unit tests for parser precision, runtime DB evidence, graph traversal, and report formatting
 
-## API
+## PR analysis API
 
-Analyze only the structural changes in a PR:
+Structural changes only:
 
 ```text
 GET /api/v1/pr/{owner}/{repo}/{number}/changes
 ```
 
-Analyze changes plus PostgreSQL runtime evidence:
+Combine PR changes with production evidence. Pass the owning runtime service explicitly:
 
 ```text
-GET /api/v1/pr/{owner}/{repo}/{number}/impact
+GET /api/v1/pr/{owner}/{repo}/{number}/impact?service=orders-service
 ```
 
-You can also POST a raw unified diff to:
+Publish the generated report back to the PR:
+
+```text
+POST /api/v1/pr/{owner}/{repo}/{number}/comment?service=orders-service
+```
+
+Raw unified diffs can also be analyzed:
 
 ```text
 POST /api/v1/pr/diff/changes
-POST /api/v1/pr/diff/impact
+POST /api/v1/pr/diff/impact?service=orders-service
 Content-Type: text/plain
 ```
+
+## Runtime telemetry API
+
+The current MVP accepts normalized outbound OpenTelemetry span observations:
+
+```http
+POST /api/v1/telemetry/spans
+Content-Type: application/json
+```
+
+Example:
+
+```json
+[
+  {
+    "sourceService": "checkout-service",
+    "targetService": "orders-service",
+    "spanKind": "CLIENT",
+    "observedAt": "2026-09-21T10:15:00Z"
+  },
+  {
+    "sourceService": "orders-service",
+    "targetService": "payment-service",
+    "spanKind": "CLIENT",
+    "observedAt": "2026-09-21T10:15:01Z"
+  }
+]
+```
+
+Inspect downstream dependencies:
+
+```text
+GET /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
+GET /api/v1/telemetry/dependencies
+```
+
+Only outbound `CLIENT` and `PRODUCER` observations are counted, preventing the corresponding server span from double-counting the same call.
 
 ## Configuration
 
@@ -61,7 +108,15 @@ export DATABASE_USER=blast_radius
 export DATABASE_PASSWORD=blast_radius
 ```
 
-For runtime SQL evidence, the connected PostgreSQL instance must expose `pg_stat_statements`. If it is unavailable, the service returns no runtime DB evidence instead of inferring usage.
+For runtime SQL evidence, PostgreSQL must expose `pg_stat_statements`. If it is unavailable, the system returns no DB runtime evidence instead of guessing.
+
+## Current MVP limitations
+
+- Telemetry ingestion accepts a normalized OpenTelemetry observation format; it is not yet a native OTLP HTTP/protobuf receiver.
+- Runtime dependency edges are currently stored in memory and reset on restart.
+- Repository-to-service ownership is explicit through the `service` parameter; no heuristic mapping is used.
+- Static Java analysis currently detects changed types but does not yet build a full symbol-level call graph.
+- Kafka, Kubernetes, Datadog/Grafana, historical incidents, and AI-generated fixes are intentionally out of scope.
 
 ## Local development
 
@@ -81,8 +136,4 @@ Health endpoint:
 GET /actuator/health
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the MVP architecture.
-
-## Scope discipline
-
-Not in the first version: Kafka, Kubernetes, Grafana/Datadog, AI-generated fixes, historical incidents, automatic PR generation, or support for every language/database.
+See [docs/architecture.md](docs/architecture.md) for the architecture.
