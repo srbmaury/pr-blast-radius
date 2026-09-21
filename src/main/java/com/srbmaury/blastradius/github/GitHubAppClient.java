@@ -88,41 +88,64 @@ public class GitHubAppClient {
     public List<GitHubInstallationInfo> listUserInstallations(
             String userAccessToken
     ) {
-        JsonNode response = apiClient.get()
-                .uri("/user/installations?per_page=100")
-                .headers(headers -> applyApiHeaders(
-                        headers,
-                        userAccessToken
-                ))
-                .retrieve()
-                .body(JsonNode.class);
-
         List<GitHubInstallationInfo> result =
                 new ArrayList<>();
 
-        if (response == null) {
-            return List.of();
-        }
+        for (int page = 1; page <= 100; page++) {
+            JsonNode response = apiClient.get()
+                    .uri(
+                            "/user/installations?per_page=100&page={page}",
+                            page
+                    )
+                    .headers(headers -> applyApiHeaders(
+                            headers,
+                            userAccessToken
+                    ))
+                    .retrieve()
+                    .body(JsonNode.class);
 
-        for (JsonNode installation :
-                response.path("installations")) {
-            long id = installation.path("id").asLong();
-            String login = installation
-                    .path("account")
-                    .path("login")
-                    .asText();
-            String type = installation
-                    .path("account")
-                    .path("type")
-                    .asText();
+            if (response == null) {
+                break;
+            }
 
-            if (id > 0 && !login.isBlank()) {
-                result.add(new GitHubInstallationInfo(
-                        id,
-                        login,
-                        type.isBlank() ? "Unknown" : type,
-                        "CANDIDATE"
-                ));
+            JsonNode installations =
+                    response.path("installations");
+
+            if (!installations.isArray()
+                    || installations.isEmpty()) {
+                break;
+            }
+
+            for (JsonNode installation :
+                    installations) {
+                long id = installation
+                        .path("id")
+                        .asLong();
+                String login = installation
+                        .path("account")
+                        .path("login")
+                        .asText();
+                String type = installation
+                        .path("account")
+                        .path("type")
+                        .asText();
+
+                if (id > 0 && !login.isBlank()) {
+                    result.add(
+                            new GitHubInstallationInfo(
+                                    id,
+                                    login,
+                                    type.isBlank()
+                                            ? "Unknown"
+                                            : type,
+                                    "CANDIDATE"
+                            )
+                    );
+                }
+            }
+
+            if (installations.size() < 100) {
+                break;
             }
         }
 
