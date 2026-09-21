@@ -143,7 +143,9 @@ public class PullRequestDiffParser {
         Matcher shortMapping = SPRING_SHORT_MAPPING.matcher(content);
         if (shortMapping.find()) {
             String method = SHORT_MAPPING_METHODS.get(shortMapping.group(1));
-            String path = extractMappingPath(shortMapping.group(2));
+            String path = shortMapping.group(2) == null
+                    ? "/"
+                    : extractMappingPath(shortMapping.group(2));
 
             if (path != null) {
                 changes.add(new DetectedChange(
@@ -194,7 +196,10 @@ public class PullRequestDiffParser {
         if (normalized.isBlank()) {
             return "/";
         }
-        return normalized.startsWith("/") ? normalized : "/" + normalized;
+        normalized = normalized.startsWith("/") ? normalized : "/" + normalized;
+        return normalized.length() > 1 && normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1)
+                : normalized;
     }
 
     private void flushSqlChanges(
