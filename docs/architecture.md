@@ -75,6 +75,40 @@ OTLP/HTTP JSON traces
                                        GitHub PR comment
 ```
 
+## GitHub App trust boundary
+
+Hosted GitHub access is installation-scoped:
+
+```text
+tenant API token
+      ↓
+one-time install state
+      ↓
+GitHub installation + user OAuth
+      ↓
+GET /user/installations
+      ↓
+verified candidate
+      ↓
+tenant ↔ installation binding
+      ↓
+GitHub App JWT (RS256)
+      ↓
+1-hour installation token
+      ↓
+PR/source/comment/check operations
+```
+
+The installation URL state is hashed in metadata and can be consumed only once. The OAuth user token is used only to verify accessible installations and is not persisted.
+
+The installation binding is unique by GitHub installation id and cannot move between tenants, including while an installation is inactive.
+
+Webhook processing verifies `X-Hub-Signature-256` over the raw payload using HMAC-SHA256 and constant-time comparison before JSON parsing. `X-GitHub-Delivery` is persisted as an idempotency key. Completed deliveries are ignored on replay; failed or stale in-progress deliveries can be retried.
+
+Relevant pull request events run the same `PullRequestAnalysisOrchestrator` as manual requests, but with a tenant-bound installation token threaded through diff, revision, source, Feign-resolution, comment, and check calls.
+
+The GitHub Check conclusion is `neutral`; the product does not equate an empty finding set with a safe deployment.
+
 ## Tenant authentication
 
 Hosted tenant identity is derived from bearer credentials rather than trusted directly from a caller-supplied tenant header.
@@ -323,4 +357,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Turn the analysis into an automatic GitHub App check/webhook flow so newly opened or updated pull requests receive blast-radius results without manually calling the analysis API.
+Add the first customer-facing onboarding/status UI on top of the tenant credentials, GitHub App installation flow, repository/service catalog, and telemetry status APIs.
