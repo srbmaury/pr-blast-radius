@@ -15,8 +15,10 @@ class FeignClientDefinitionAnalyzerTest {
                 import org.springframework.cloud.openfeign.FeignClient;
                 import org.springframework.web.bind.annotation.*;
 
-                @FeignClient(name = "payment-service")
-                @RequestMapping("/api")
+                @FeignClient(
+                    name = "payment-service",
+                    path = "/api"
+                )
                 interface PaymentClient {
 
                     @PostMapping("/payments")
@@ -73,4 +75,34 @@ class FeignClientDefinitionAnalyzerTest {
                 invocation
         )).isEmpty();
     }
+
+    @Test
+    void skipsNonLiteralFeignMethodRoute() {
+        String source = """
+                import org.springframework.cloud.openfeign.FeignClient;
+                import org.springframework.web.bind.annotation.*;
+
+                @FeignClient(name = "payment-service")
+                interface PaymentClient {
+                    String PAYMENTS = "/payments";
+
+                    @PostMapping(PAYMENTS)
+                    Payment createPayment(String orderId);
+                }
+                """;
+
+        var invocation = new FeignInvocation(
+                "OrderService#create",
+                "com.acme.payments.PaymentClient",
+                "createPayment",
+                1,
+                "paymentClient.createPayment(orderId)"
+        );
+
+        assertThat(analyzer.resolve(
+                source,
+                invocation
+        )).isEmpty();
+    }
+
 }
