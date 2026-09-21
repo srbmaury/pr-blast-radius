@@ -1,4 +1,4 @@
-# MVP Architecture
+# Architecture
 
 ```text
                      GitHub PR
@@ -9,19 +9,24 @@
               +----------+----------+
               |                     |
               v                     v
-      Java / SQL changes     PostgreSQL evidence
+      Java / SQL changes     Customer PostgreSQL
                                     |
                              pg_stat_statements
+                                    |
+                                    v
+                             runtime SQL evidence
 
 OTLP/HTTP JSON traces
         |
         v
    OTLP JSON adapter
-service.name + peer.service
         |
         v
- Runtime Dependency Store
- calls + lastSeen + edges
+ Dedicated metadata database
+ runtime_dependency_edge
+ calls + lastSeen
+        |
+        +--> scheduled retention cleanup
         |
         v
  Cycle-safe graph traversal
@@ -40,50 +45,42 @@ service.name + peer.service
                                        GitHub PR comment
 ```
 
-## Evidence model
+## Database isolation
 
-### Change evidence
+Customer PostgreSQL is treated as an evidence source. The product does not create its own tables there.
 
-PR diffs provide explicit changed files, Java types, tables, and columns.
+A separate metadata datasource owns product state such as runtime dependency edges. Local development defaults to H2 file storage; production can point the metadata datasource at a dedicated database.
 
-### Database runtime evidence
+## Runtime edge persistence
 
-`pg_stat_statements` is queried for observed SQL using affected tables or columns. Only observed queries produce `CONFIRMED` findings.
+Each directed edge stores:
 
-### Runtime service evidence
-
-OTLP/HTTP JSON client or producer spans create directed edges only when both attributes are available:
-
-```text
-resource service.name = orders-service
-peer.service          = payment-service
-
-orders-service -> payment-service
-```
-
-Each edge retains:
-
-- total observed calls
+- source service
+- target service
+- observed call count
 - last-seen timestamp
 
-Downstream traversal has a configurable depth limit and cycle protection.
+The pair `(source_service, target_service)` is the primary key.
 
-## Service ownership
+Repeated observations increment the call count and advance `last_seen`.
 
-The MVP does not guess which runtime service belongs to a repository. The caller provides it explicitly:
+## Retention
+
+A scheduled cleanup removes edges whose `last_seen` falls outside the configured retention window.
+
+Default:
 
 ```text
-/impact?service=orders-service
+retention: 168 hours
+cleanup: every 1 hour
 ```
 
-A repository/service catalog can replace this later.
+This prevents old topology from permanently polluting blast-radius results.
 
-## Storage
+## Evidence model
 
-PostgreSQL is the source for SQL runtime evidence.
+Only observed PostgreSQL queries or runtime service edges become `CONFIRMED` findings. Missing telemetry results in missing evidence rather than guessed dependencies.
 
-The runtime dependency graph is intentionally in memory for the MVP. This avoids writing product metadata into the customer's production database.
+## Next focused capability
 
-## Next engineering step
-
-Persist dependency edges in a separate product metadata store with a retention window. Native OTLP protobuf support can follow if validation shows the JSON adapter is insufficient.
+Build a repository/service catalog so callers no longer have to manually pass `?service=orders-service`.
