@@ -1,6 +1,5 @@
 package com.srbmaury.blastradius.api;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.srbmaury.blastradius.domain.GitHubWebhookResult;
@@ -13,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/v1/github")
@@ -59,7 +60,7 @@ public class GitHubWebhookController {
         final JsonNode body;
         try {
             body = objectMapper.readTree(payload);
-        } catch (JsonProcessingException ex) {
+        } catch (IOException ex) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Invalid GitHub webhook payload",
