@@ -1,48 +1,82 @@
 # MVP Architecture
 
 ```text
-GitHub PR
-   |
-   v
-PR Diff Ingestor
-   |
-   +------> Static Java dependency extractor
-   |
-   +------> PostgreSQL schema/query collector
-   |
-   +------> OpenTelemetry runtime dependency collector
-                  |
-                  v
-           Dependency Graph
-                  |
-                  v
-            Impact Engine
-                  |
-          +-------+-------+
-          |               |
-          v               v
-   GitHub PR comment    Web UI
+                     GitHub PR
+                         |
+                         v
+                  PR Diff Ingestor
+                         |
+              +----------+----------+
+              |                     |
+              v                     v
+      Java / SQL changes     PostgreSQL evidence
+                                    |
+                             pg_stat_statements
+
+OpenTelemetry-derived observations
+              |
+              v
+     Runtime Dependency Store
+     calls + lastSeen + edges
+              |
+              v
+     Cycle-safe graph traversal
+              |
+              +--------------------+
+                                   |
+                                   v
+                            Impact Analyzer
+                                   |
+                       +-----------+-----------+
+                       |                       |
+                       v                       v
+                 JSON response          Markdown report
+                                               |
+                                               v
+                                       GitHub PR comment
 ```
 
-## Core entities
+## Evidence model
 
-- **Change** — file, symbol, API, table, or column modified by a PR.
-- **Dependency** — directed relationship between two components.
-- **Evidence** — why the dependency exists: static reference, SQL usage, or runtime trace.
-- **Finding** — affected component plus evidence and confidence.
+### Change evidence
 
-## Confidence model
+PR diffs provide explicit changed files, Java types, tables, and columns.
 
-| Level | Meaning |
-|---|---|
-| CONFIRMED | Observed from production/runtime evidence |
-| STRONG | Direct static, schema, or SQL reference |
-| POSSIBLE | Inferred; must not block a deployment by itself |
+### Database runtime evidence
 
-## First milestone
+`pg_stat_statements` is queried for observed SQL using affected tables or columns. Only observed queries produce `CONFIRMED` findings.
 
-Detect a PostgreSQL column change in a PR and identify:
-1. Java code that references it.
-2. SQL that reads/writes it.
-3. Runtime services connected to the owning service.
-4. Evidence for every reported impact.
+### Runtime service evidence
+
+Normalized outbound OpenTelemetry `CLIENT` / `PRODUCER` observations create directed edges:
+
+```text
+checkout-service -> orders-service -> payment-service
+```
+
+Each edge retains:
+
+- total observed calls
+- last-seen timestamp
+
+Downstream traversal has a configurable depth limit and cycle protection.
+
+## Service ownership
+
+The MVP does not guess which runtime service belongs to a repository. The caller provides it explicitly:
+
+```text
+/impact?service=orders-service
+```
+
+A repository/service catalog can replace this later.
+
+## Storage
+
+PostgreSQL is the source for SQL runtime evidence.
+
+The service dependency graph is intentionally in memory for the MVP. Persistent graph storage can be added only after validating that runtime blast-radius evidence is useful.
+
+## Next engineering step
+
+Replace normalized telemetry ingestion with an OpenTelemetry Collector adapter or native OTLP receiver, then persist dependency edges with a retention window.
