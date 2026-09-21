@@ -43,6 +43,15 @@ public class SourceAwarePullRequestEnricher {
             String diff,
             PullRequestChangeSet initial
     ) {
+        List<DiffFileLineChanges> javaFiles = diffLineParser.parse(diff)
+                .stream()
+                .filter(this::isJavaChange)
+                .toList();
+
+        if (javaFiles.isEmpty()) {
+            return initial;
+        }
+
         PullRequestRevision revision = githubClient.fetchRevision(
                 owner,
                 repository,
@@ -51,10 +60,7 @@ public class SourceAwarePullRequestEnricher {
 
         List<DetectedChange> sourceAwareChanges = new ArrayList<>();
 
-        for (DiffFileLineChanges file : diffLineParser.parse(diff)) {
-            if (!isJavaChange(file)) {
-                continue;
-            }
+        for (DiffFileLineChanges file : javaFiles) {
 
             Map<String, SpringEndpointOwnership> baseEndpoints =
                     analyzeRevision(
