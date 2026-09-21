@@ -92,16 +92,16 @@ public class EvidenceCoverageService {
         }
 
         try {
-            var graph = runtimeDependencyService.downstream(
+            var radius = runtimeDependencyService.blastRadius(
                     rootService,
                     RUNTIME_DEPTH
             );
 
-            if (graph.edges().isEmpty()) {
+            if (radius.totalEdges() == 0) {
                 return new EvidenceCoverage(
                         EvidenceSource.SERVICE_RUNTIME,
                         EvidenceStatus.NO_DATA,
-                        "Runtime service is configured, but no downstream telemetry exists for "
+                        "Runtime service is configured, but no caller or dependency telemetry exists for "
                                 + rootService
                 );
             }
@@ -109,8 +109,11 @@ public class EvidenceCoverageService {
             return new EvidenceCoverage(
                     EvidenceSource.SERVICE_RUNTIME,
                     EvidenceStatus.AVAILABLE,
-                    "Observed " + graph.edges().size()
-                            + " downstream runtime edge(s) from "
+                    "Observed "
+                            + radius.callers().size()
+                            + " caller edge(s) and "
+                            + radius.dependencies().size()
+                            + " dependency edge(s) around "
                             + rootService
             );
         } catch (DataAccessException ex) {

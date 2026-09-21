@@ -1,6 +1,7 @@
 package com.srbmaury.blastradius.telemetry;
 
 import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
+import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
 import com.srbmaury.blastradius.domain.RuntimeDependencyGraph;
 import org.springframework.stereotype.Service;
@@ -96,6 +97,55 @@ public class RuntimeDependencyService {
                 root,
                 depthLimit,
                 new ArrayList<>(collected)
+        );
+    }
+
+    public RuntimeDependencyGraph callers(String rootService, int maxDepth) {
+        String root = requireService(rootService);
+        int depthLimit = Math.max(1, Math.min(maxDepth, 10));
+
+        Set<RuntimeDependencyEdge> collected = new LinkedHashSet<>();
+        Set<String> expanded = new HashSet<>();
+        Queue<ServiceAtDepth> queue = new ArrayDeque<>();
+
+        queue.add(new ServiceAtDepth(root, 0));
+        expanded.add(root);
+
+        while (!queue.isEmpty()) {
+            ServiceAtDepth current = queue.remove();
+
+            if (current.depth() >= depthLimit) {
+                continue;
+            }
+
+            for (RuntimeDependencyEdge edge : store.incoming(current.service())) {
+                collected.add(edge);
+
+                if (expanded.add(edge.sourceService())) {
+                    queue.add(new ServiceAtDepth(
+                            edge.sourceService(),
+                            current.depth() + 1
+                    ));
+                }
+            }
+        }
+
+        return new RuntimeDependencyGraph(
+                root,
+                depthLimit,
+                new ArrayList<>(collected)
+        );
+    }
+
+    public RuntimeBlastRadius blastRadius(String rootService, int maxDepth) {
+        RuntimeDependencyGraph callers = callers(rootService, maxDepth);
+        RuntimeDependencyGraph dependencies = downstream(rootService, maxDepth);
+
+        return new RuntimeBlastRadius(
+                callers.rootService(),
+                callers.maxDepth(),
+                callers.edges(),
+                dependencies.edges()
         );
     }
 

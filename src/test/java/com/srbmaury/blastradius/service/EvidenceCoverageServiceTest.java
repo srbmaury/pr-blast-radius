@@ -8,7 +8,7 @@ import com.srbmaury.blastradius.domain.EvidenceStatus;
 import com.srbmaury.blastradius.domain.ImpactConfidence;
 import com.srbmaury.blastradius.domain.ImpactFinding;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
-import com.srbmaury.blastradius.domain.RuntimeDependencyGraph;
+import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.postgres.PostgresDependencyCollector;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
 import org.junit.jupiter.api.Test;
@@ -58,10 +58,11 @@ class EvidenceCoverageServiceTest {
         PostgresDependencyCollector postgres = mock(PostgresDependencyCollector.class);
         RuntimeDependencyService runtime = mock(RuntimeDependencyService.class);
 
-        when(runtime.downstream("orders-service", 3))
-                .thenReturn(new RuntimeDependencyGraph(
+        when(runtime.blastRadius("orders-service", 3))
+                .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
+                        List.of(),
                         List.of()
                 ));
 

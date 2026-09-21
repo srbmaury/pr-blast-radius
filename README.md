@@ -29,6 +29,7 @@ Findings are evidence-based:
 - Statement-scoped SQL parsing to reduce false positives
 - PostgreSQL runtime query evidence through `pg_stat_statements`
 - Runtime service graph with call counts, last-seen timestamps, depth limits, and cycle protection
+- Bidirectional blast radius: callers into the changed service plus dependencies it calls
 - OTLP/HTTP JSON trace adaptation using `service.name` + `peer.service`
 - Persistent runtime dependency edges in a dedicated metadata database
 - TTL-based cleanup of stale runtime edges
@@ -122,6 +123,7 @@ Content-Type: text/plain
 ```text
 POST /api/v1/telemetry/spans
 POST /api/v1/telemetry/otlp-json/v1/traces
+GET  /api/v1/telemetry/blast-radius?service=orders-service&maxDepth=3
 GET  /api/v1/telemetry/downstream?service=checkout-service&maxDepth=3
 GET  /api/v1/telemetry/dependencies
 ```
@@ -177,6 +179,23 @@ SERVICE_RUNTIME
 ```
 
 This prevents a dangerous interpretation of an empty result. If telemetry is missing, the PR report explicitly says that the analysis is incomplete and must not be treated as proof that the change is safe.
+
+## Runtime blast-radius semantics
+
+For a changed `orders-service`:
+
+```text
+frontend -> checkout -> orders -> payment -> ledger
+                         ^
+                     changed service
+```
+
+the runtime blast radius separates:
+
+- **callers**: `checkout -> orders`, `frontend -> checkout`
+- **dependencies**: `orders -> payment`, `payment -> ledger`
+
+This is important because callers are often the systems most directly exposed to a changed service contract. Cycles are handled safely and duplicate physical edges are suppressed in impact findings.
 
 ## Current limitations
 

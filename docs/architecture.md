@@ -37,7 +37,8 @@ OTLP/HTTP JSON traces
         +--> scheduled retention cleanup
         |
         v
- Cycle-safe graph traversal
+ Cycle-safe bidirectional graph traversal
+ callers + dependencies
         |
         +--------------------------+
                                    |
@@ -81,6 +82,20 @@ Product-owned metadata lives in the separate metadata datasource:
 Each edge stores source service, target service, observed call count, and last-seen timestamp.
 
 Stale edges are deleted according to the configured retention window.
+
+## Bidirectional runtime graph
+
+For a changed service, runtime analysis traverses both directions:
+
+```text
+callers                      dependencies
+
+frontend -> checkout -> orders -> payment -> ledger
+                        ^
+                    changed service
+```
+
+Reverse traversal finds services that depend on the changed service. Forward traversal finds dependencies that the changed service invokes. Both directions are depth-limited and cycle-safe.
 
 ## Evidence model
 
