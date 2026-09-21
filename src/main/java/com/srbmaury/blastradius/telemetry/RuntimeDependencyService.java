@@ -49,7 +49,12 @@ public class RuntimeDependencyService {
                 ? Instant.now()
                 : observation.observedAt();
 
-        store.record(source, target, observedAt);
+        store.record(
+                source,
+                target,
+                normalizeEndpoint(observation.endpoint()),
+                observedAt
+        );
         return true;
     }
 
@@ -101,8 +106,17 @@ public class RuntimeDependencyService {
     }
 
     public RuntimeDependencyGraph callers(String rootService, int maxDepth) {
+        return callers(rootService, maxDepth, Set.of());
+    }
+
+    public RuntimeDependencyGraph callers(
+            String rootService,
+            int maxDepth,
+            Set<String> changedEndpoints
+    ) {
         String root = requireService(rootService);
         int depthLimit = Math.max(1, Math.min(maxDepth, 10));
+        Set<String> endpointFilter = normalizeEndpoints(changedEndpoints);
 
         Set<RuntimeDependencyEdge> collected = new LinkedHashSet<>();
         Set<String> expanded = new HashSet<>();
@@ -119,6 +133,12 @@ public class RuntimeDependencyService {
             }
 
             for (RuntimeDependencyEdge edge : store.incoming(current.service())) {
+                if (current.depth() == 0
+                        && !endpointFilter.isEmpty()
+                        && !endpointFilter.contains(edge.endpoint())) {
+                    continue;
+                }
+
                 collected.add(edge);
 
                 if (expanded.add(edge.sourceService())) {
@@ -138,7 +158,19 @@ public class RuntimeDependencyService {
     }
 
     public RuntimeBlastRadius blastRadius(String rootService, int maxDepth) {
-        RuntimeDependencyGraph callers = callers(rootService, maxDepth);
+        return blastRadius(rootService, maxDepth, Set.of());
+    }
+
+    public RuntimeBlastRadius blastRadius(
+            String rootService,
+            int maxDepth,
+            Set<String> changedEndpoints
+    ) {
+        RuntimeDependencyGraph callers = callers(
+                rootService,
+                maxDepth,
+                changedEndpoints
+        );
         RuntimeDependencyGraph dependencies = downstream(rootService, maxDepth);
 
         return new RuntimeBlastRadius(
@@ -147,6 +179,10 @@ public class RuntimeDependencyService {
                 callers.edges(),
                 dependencies.edges()
         );
+    }
+
+    public List<RuntimeDependencyEdge> directCallers(String service) {
+        return store.incoming(requireService(service));
     }
 
     public List<RuntimeDependencyEdge> allEdges() {
@@ -166,6 +202,21 @@ public class RuntimeDependencyService {
             return null;
         }
         return service.trim();
+    }
+
+    private String normalizeEndpoint(String endpoint) {
+        return endpoint == null || endpoint.isBlank() ? "*" : endpoint.trim();
+    }
+
+    private Set<String> normalizeEndpoints(Set<String> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return Set.of();
+        }
+
+        return endpoints.stream()
+                .map(this::normalizeEndpoint)
+                .filter(endpoint -> !"*".equals(endpoint))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private record ServiceAtDepth(String service, int depth) {}

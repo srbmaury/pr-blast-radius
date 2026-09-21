@@ -69,4 +69,93 @@ class RuntimeDependencyStoreTest {
                 .extracting(edge -> edge.sourceService() + "->" + edge.targetService())
                 .containsExactly("orders-service->payment-service");
     }
+
+    @Test
+    void keepsDifferentEndpointsAsSeparateEdges() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        var store = new RuntimeDependencyStore(jdbcTemplate);
+        store.initialize();
+
+        Instant observedAt = Instant.parse("2026-09-21T10:00:00Z");
+        store.record(
+                "checkout-service",
+                "orders-service",
+                "HTTP POST /orders",
+                observedAt
+        );
+        store.record(
+                "checkout-service",
+                "orders-service",
+                "HTTP GET /orders/{id}",
+                observedAt
+        );
+        store.record(
+                "checkout-service",
+                "orders-service",
+                "HTTP POST /orders",
+                observedAt.plusSeconds(60)
+        );
+
+        assertThat(store.incoming("orders-service"))
+                .hasSize(2)
+                .anySatisfy(edge -> {
+                    assertThat(edge.endpoint()).isEqualTo("HTTP POST /orders");
+                    assertThat(edge.callCount()).isEqualTo(2);
+                })
+                .anySatisfy(edge -> {
+                    assertThat(edge.endpoint()).isEqualTo("HTTP GET /orders/{id}");
+                    assertThat(edge.callCount()).isEqualTo(1);
+                });
+    }
+
+    @Test
+    void migratesLegacyServiceOnlyEdgesAsWildcardEndpoint() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        jdbcTemplate.execute("""
+                CREATE TABLE runtime_dependency_edge (
+                    source_service VARCHAR(255) NOT NULL,
+                    target_service VARCHAR(255) NOT NULL,
+                    call_count BIGINT NOT NULL,
+                    last_seen TIMESTAMP NOT NULL,
+                    PRIMARY KEY (source_service, target_service)
+                )
+                """);
+        jdbcTemplate.update(
+                """
+                INSERT INTO runtime_dependency_edge (
+                    source_service,
+                    target_service,
+                    call_count,
+                    last_seen
+                ) VALUES (?, ?, ?, ?)
+                """,
+                "checkout-service",
+                "orders-service",
+                42L,
+                java.sql.Timestamp.from(Instant.parse("2026-09-21T10:00:00Z"))
+        );
+
+        var store = new RuntimeDependencyStore(jdbcTemplate);
+        store.initialize();
+
+        assertThat(store.all()).singleElement().satisfies(edge -> {
+            assertThat(edge.endpoint()).isEqualTo("*");
+            assertThat(edge.callCount()).isEqualTo(42);
+        });
+    }
+
 }

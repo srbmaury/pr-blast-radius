@@ -8,6 +8,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -205,6 +206,70 @@ class RuntimeDependencyServiceTest {
                         "checkout-service->orders-service",
                         "orders-service->checkout-service"
                 );
+    }
+
+
+    @Test
+    void filtersOnlyDirectCallersByChangedEndpointAndKeepsUpstreamChain() {
+        Instant observedAt = Instant.parse("2026-09-21T10:00:00Z");
+
+        service.ingest(List.of(
+                new OpenTelemetrySpanObservation(
+                        "frontend-service",
+                        "checkout-service",
+                        "HTTP POST /checkout",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "checkout-service",
+                        "orders-service",
+                        "HTTP POST /orders",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "checkout-service",
+                        "orders-service",
+                        "HTTP GET /orders/{id}",
+                        "CLIENT",
+                        observedAt
+                ),
+                new OpenTelemetrySpanObservation(
+                        "orders-service",
+                        "payment-service",
+                        "HTTP POST /payments",
+                        "CLIENT",
+                        observedAt
+                )
+        ));
+
+        var radius = service.blastRadius(
+                "orders-service",
+                2,
+                Set.of("HTTP POST /orders")
+        );
+
+        assertThat(radius.callers())
+                .extracting(edge ->
+                        edge.sourceService()
+                                + "->"
+                                + edge.targetService()
+                                + "["
+                                + edge.endpoint()
+                                + "]"
+                )
+                .containsExactlyInAnyOrder(
+                        "checkout-service->orders-service[HTTP POST /orders]",
+                        "frontend-service->checkout-service[HTTP POST /checkout]"
+                )
+                .doesNotContain(
+                        "checkout-service->orders-service[HTTP GET /orders/{id}]"
+                );
+
+        assertThat(radius.dependencies())
+                .extracting(edge -> edge.endpoint())
+                .contains("HTTP POST /payments");
     }
 
 }

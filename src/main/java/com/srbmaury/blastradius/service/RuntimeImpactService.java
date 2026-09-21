@@ -23,6 +23,13 @@ public class RuntimeImpactService {
     }
 
     public List<ImpactFinding> analyze(String rootService) {
+        return analyze(rootService, Set.of());
+    }
+
+    public List<ImpactFinding> analyze(
+            String rootService,
+            Set<String> changedEndpoints
+    ) {
         if (rootService == null || rootService.isBlank()) {
             return List.of();
         }
@@ -30,14 +37,21 @@ public class RuntimeImpactService {
         try {
             var radius = dependencyService.blastRadius(
                     rootService,
-                    DEFAULT_MAX_DEPTH
+                    DEFAULT_MAX_DEPTH,
+                    changedEndpoints
             );
 
             List<ImpactFinding> findings = new ArrayList<>();
             Set<EdgeKey> seenEdges = new HashSet<>();
 
             radius.callers().forEach(edge -> {
-                if (!seenEdges.add(new EdgeKey(edge.sourceService(), edge.targetService()))) {
+                EdgeKey key = new EdgeKey(
+                        edge.sourceService(),
+                        edge.targetService(),
+                        edge.endpoint()
+                );
+
+                if (!seenEdges.add(key)) {
                     return;
                 }
 
@@ -46,6 +60,7 @@ public class RuntimeImpactService {
                         edge.sourceService()
                                 + " -> "
                                 + edge.targetService()
+                                + endpointSuffix(edge.endpoint())
                                 + " (caller path into changed service)",
                         "runtime calls=" + edge.callCount()
                                 + ", lastSeen=" + edge.lastSeen(),
@@ -54,7 +69,13 @@ public class RuntimeImpactService {
             });
 
             radius.dependencies().forEach(edge -> {
-                if (!seenEdges.add(new EdgeKey(edge.sourceService(), edge.targetService()))) {
+                EdgeKey key = new EdgeKey(
+                        edge.sourceService(),
+                        edge.targetService(),
+                        edge.endpoint()
+                );
+
+                if (!seenEdges.add(key)) {
                     return;
                 }
 
@@ -63,6 +84,7 @@ public class RuntimeImpactService {
                         edge.sourceService()
                                 + " -> "
                                 + edge.targetService()
+                                + endpointSuffix(edge.endpoint())
                                 + " (dependency path from changed service)",
                         "runtime calls=" + edge.callCount()
                                 + ", lastSeen=" + edge.lastSeen(),
@@ -76,5 +98,15 @@ public class RuntimeImpactService {
         }
     }
 
-    private record EdgeKey(String sourceService, String targetService) {}
+    private String endpointSuffix(String endpoint) {
+        return endpoint == null || endpoint.isBlank() || "*".equals(endpoint)
+                ? ""
+                : " [" + endpoint + "]";
+    }
+
+    private record EdgeKey(
+            String sourceService,
+            String targetService,
+            String endpoint
+    ) {}
 }

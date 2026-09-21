@@ -8,6 +8,7 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class OtlpJsonTraceAdapter {
@@ -39,9 +40,11 @@ public class OtlpJsonTraceAdapter {
                         continue;
                     }
 
-                    String targetService = findAttribute(
-                            span.path("attributes"),
-                            "peer.service"
+                    JsonNode attributes = span.path("attributes");
+                    String targetService = firstAttribute(
+                            attributes,
+                            "peer.service",
+                            "server.address"
                     );
 
                     if (targetService == null || targetService.isBlank()) {
@@ -51,6 +54,7 @@ public class OtlpJsonTraceAdapter {
                     observations.add(new OpenTelemetrySpanObservation(
                             sourceService,
                             targetService,
+                            resolveEndpoint(attributes, spanKind),
                             spanKind,
                             parseUnixNano(span.path("startTimeUnixNano"))
                     ));
@@ -59,6 +63,62 @@ public class OtlpJsonTraceAdapter {
         }
 
         return observations;
+    }
+
+    private String resolveEndpoint(JsonNode attributes, String spanKind) {
+        String httpMethod = firstAttribute(
+                attributes,
+                "http.request.method",
+                "http.method"
+        );
+        String httpRoute = firstAttribute(
+                attributes,
+                "url.template",
+                "http.route"
+        );
+
+        if (httpMethod != null && httpRoute != null) {
+            return "HTTP "
+                    + httpMethod.toUpperCase(Locale.ROOT)
+                    + " "
+                    + normalizeRoute(httpRoute);
+        }
+
+        String rpcService = findAttribute(attributes, "rpc.service");
+        String rpcMethod = findAttribute(attributes, "rpc.method");
+        String rpcSystem = findAttribute(attributes, "rpc.system");
+
+        if (rpcService != null && rpcMethod != null) {
+            return "RPC "
+                    + (rpcSystem == null ? "unknown" : rpcSystem)
+                    + " "
+                    + rpcService
+                    + "/"
+                    + rpcMethod;
+        }
+
+        if ("PRODUCER".equals(spanKind)) {
+            String destination = firstAttribute(
+                    attributes,
+                    "messaging.destination.name",
+                    "messaging.destination"
+            );
+            if (destination != null) {
+                return "MESSAGING " + destination;
+            }
+        }
+
+        return "*";
+    }
+
+    private String firstAttribute(JsonNode attributes, String... keys) {
+        for (String key : keys) {
+            String value = findAttribute(attributes, key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String findAttribute(JsonNode attributes, String key) {
@@ -101,6 +161,17 @@ public class OtlpJsonTraceAdapter {
             case "SPAN_KIND_PRODUCER", "PRODUCER", "4" -> "PRODUCER";
             default -> null;
         };
+    }
+
+    private String normalizeRoute(String route) {
+        String normalized = route == null ? "/" : route.trim();
+        if (normalized.isBlank()) {
+            return "/";
+        }
+        normalized = normalized.startsWith("/") ? normalized : "/" + normalized;
+        return normalized.length() > 1 && normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1)
+                : normalized;
     }
 
     private Instant parseUnixNano(JsonNode valueNode) {

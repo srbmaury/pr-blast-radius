@@ -84,4 +84,51 @@ class PullRequestDiffParserTest {
                 .noneSatisfy(change -> assertThat(change.identifier()).isEqualTo("orders.risk_level"))
                 .noneSatisfy(change -> assertThat(change.identifier()).isEqualTo("customers.status"));
     }
+
+    @Test
+    void detectsChangedSpringShortcutEndpoint() {
+        String diff = """
+                diff --git a/src/main/java/com/acme/orders/OrderController.java b/src/main/java/com/acme/orders/OrderController.java
+                --- a/src/main/java/com/acme/orders/OrderController.java
+                +++ b/src/main/java/com/acme/orders/OrderController.java
+                @@ -10,2 +10,2 @@
+                -@PostMapping("/orders/v1")
+                +@PostMapping(path = "/orders")
+                 public Order create() {}
+                """;
+
+        var result = parser.parse("acme/orders#45", diff);
+
+        assertThat(result.changes())
+                .anySatisfy(change -> {
+                    assertThat(change.kind()).isEqualTo(ChangeKind.API_ENDPOINT);
+                    assertThat(change.operation()).isEqualTo(ChangeOperation.REMOVED);
+                    assertThat(change.identifier()).isEqualTo("HTTP POST /orders/v1");
+                })
+                .anySatisfy(change -> {
+                    assertThat(change.kind()).isEqualTo(ChangeKind.API_ENDPOINT);
+                    assertThat(change.operation()).isEqualTo(ChangeOperation.ADDED);
+                    assertThat(change.identifier()).isEqualTo("HTTP POST /orders");
+                });
+    }
+
+    @Test
+    void detectsRequestMappingEndpoint() {
+        String diff = """
+                diff --git a/src/main/java/com/acme/orders/OrderController.java b/src/main/java/com/acme/orders/OrderController.java
+                --- a/src/main/java/com/acme/orders/OrderController.java
+                +++ b/src/main/java/com/acme/orders/OrderController.java
+                @@ -20,0 +20,1 @@
+                +@RequestMapping(value = "/orders/{id}", method = RequestMethod.GET)
+                """;
+
+        var result = parser.parse("acme/orders#46", diff);
+
+        assertThat(result.changes())
+                .anySatisfy(change -> {
+                    assertThat(change.kind()).isEqualTo(ChangeKind.API_ENDPOINT);
+                    assertThat(change.identifier()).isEqualTo("HTTP GET /orders/{id}");
+                });
+    }
+
 }

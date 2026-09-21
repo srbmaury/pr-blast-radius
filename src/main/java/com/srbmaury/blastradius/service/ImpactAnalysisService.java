@@ -1,5 +1,6 @@
 package com.srbmaury.blastradius.service;
 
+import com.srbmaury.blastradius.domain.ChangeKind;
 import com.srbmaury.blastradius.domain.EvidenceCoverage;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.ImpactFinding;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ImpactAnalysisService {
@@ -32,7 +35,16 @@ public class ImpactAnalysisService {
     ) {
         List<ImpactFinding> findings = new ArrayList<>();
         findings.addAll(databaseImpactService.analyze(changeSet));
-        findings.addAll(runtimeImpactService.analyze(rootService));
+
+        Set<String> changedEndpoints = changeSet.changes().stream()
+                .filter(change -> change.kind() == ChangeKind.API_ENDPOINT)
+                .map(change -> change.identifier())
+                .collect(Collectors.toUnmodifiableSet());
+
+        findings.addAll(runtimeImpactService.analyze(
+                rootService,
+                changedEndpoints
+        ));
 
         List<ImpactFinding> immutableFindings = List.copyOf(findings);
         List<EvidenceCoverage> coverage = evidenceCoverageService.evaluate(
