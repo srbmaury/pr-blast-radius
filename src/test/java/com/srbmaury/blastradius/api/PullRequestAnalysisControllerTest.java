@@ -9,6 +9,7 @@ import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
 import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
+import com.srbmaury.blastradius.tenant.TenantAccessResolver;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -55,6 +56,10 @@ class PullRequestAnalysisControllerTest {
                         Instant.now()
                 )
         ));
+        when(access.resolveApiTenant(
+                "Bearer api-token",
+                "tenant-a"
+        )).thenReturn("tenant-a");
         when(analysis.analyze(
                 "tenant-a",
                 enriched,
@@ -75,7 +80,8 @@ class PullRequestAnalysisControllerTest {
                 "orders",
                 42,
                 null,
-                "tenant-a"
+                "tenant-a",
+                "Bearer api-token"
         )).isSameAs(expected);
 
         verify(analysis).analyze(
@@ -107,6 +113,10 @@ class PullRequestAnalysisControllerTest {
                 "diff",
                 initial
         )).thenReturn(enriched);
+        when(access.resolveApiTenant(
+                "Bearer api-token",
+                "tenant-a"
+        )).thenReturn("tenant-a");
         when(analysis.analyze(
                 "tenant-a",
                 enriched,
@@ -127,7 +137,8 @@ class PullRequestAnalysisControllerTest {
                 "orders",
                 42,
                 "manual-service",
-                "tenant-a"
+                "tenant-a",
+                "Bearer api-token"
         )).isSameAs(expected);
 
         verify(analysis).analyze(
@@ -164,6 +175,10 @@ class PullRequestAnalysisControllerTest {
                 "default",
                 "acme/orders"
         )).thenReturn(Optional.empty());
+        when(access.resolveApiTenant(
+                null,
+                null
+        )).thenReturn("default");
         when(analysis.analyze(
                 "default",
                 enriched,
@@ -183,6 +198,7 @@ class PullRequestAnalysisControllerTest {
                 "acme",
                 "orders",
                 42,
+                null,
                 null,
                 null
         )).isSameAs(expected);
