@@ -265,14 +265,6 @@ public class EvidenceCoverageService {
             );
         }
 
-        if (changeSet.staticOutboundCalls().isEmpty()) {
-            return new EvidenceCoverage(
-                    EvidenceSource.STATIC_OUTBOUND,
-                    EvidenceStatus.NO_DATA,
-                    "No supported literal outbound API call was resolved from the changed Java source"
-            );
-        }
-
         return new EvidenceCoverage(
                 EvidenceSource.STATIC_OUTBOUND,
                 EvidenceStatus.NO_DATA,
