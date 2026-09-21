@@ -64,4 +64,24 @@ class PullRequestDiffParserTest {
                     assertThat(change.identifier()).isEqualTo("orders.status -> order_status");
                 });
     }
+
+    @Test
+    void keepsColumnChangesScopedToTheirOwnTables() {
+        String diff = """
+                diff --git a/db/migrations/V44__two_tables.sql b/db/migrations/V44__two_tables.sql
+                --- /dev/null
+                +++ b/db/migrations/V44__two_tables.sql
+                @@ -0,0 +1,2 @@
+                +ALTER TABLE orders DROP COLUMN status;
+                +ALTER TABLE customers ADD COLUMN risk_level text;
+                """;
+
+        var result = parser.parse("acme/orders#44", diff);
+
+        assertThat(result.changes())
+                .anySatisfy(change -> assertThat(change.identifier()).isEqualTo("orders.status"))
+                .anySatisfy(change -> assertThat(change.identifier()).isEqualTo("customers.risk_level"))
+                .noneSatisfy(change -> assertThat(change.identifier()).isEqualTo("orders.risk_level"))
+                .noneSatisfy(change -> assertThat(change.identifier()).isEqualTo("customers.status"));
+    }
 }
