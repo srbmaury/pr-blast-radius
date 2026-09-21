@@ -2,6 +2,7 @@ package com.srbmaury.blastradius.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
+import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
 import com.srbmaury.blastradius.domain.RuntimeDependencyGraph;
 import com.srbmaury.blastradius.telemetry.OtlpJsonTraceAdapter;
@@ -61,6 +62,14 @@ public class TelemetryController {
     @GetMapping("/dependencies")
     public List<RuntimeDependencyEdge> allDependencies() {
         return dependencyService.allEdges();
+    }
+
+    @GetMapping("/blast-radius")
+    public RuntimeBlastRadius blastRadius(
+            @RequestParam String service,
+            @RequestParam(defaultValue = "3") int maxDepth
+    ) {
+        return dependencyService.blastRadius(service, maxDepth);
     }
 
     @GetMapping("/downstream")
