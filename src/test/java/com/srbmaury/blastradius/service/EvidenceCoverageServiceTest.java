@@ -8,6 +8,7 @@ import com.srbmaury.blastradius.domain.EvidenceStatus;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
 import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
+import com.srbmaury.blastradius.domain.StaticOutboundCall;
 import com.srbmaury.blastradius.domain.TraceCausalEdge;
 import com.srbmaury.blastradius.domain.TraceCausalityResult;
 import com.srbmaury.blastradius.postgres.PostgresDependencyCollector;
@@ -240,4 +241,107 @@ class EvidenceCoverageServiceTest {
                 ))
         );
     }
+
+    @Test
+    void reportsStaticOutboundCoverageWhenSourceDependencyIsResolved() {
+        PostgresDependencyCollector postgres =
+                mock(PostgresDependencyCollector.class);
+        RuntimeDependencyService runtime =
+                mock(RuntimeDependencyService.class);
+        TraceCausalityService traces =
+                mock(TraceCausalityService.class);
+
+        when(runtime.blastRadius("orders-service", 3))
+                .thenReturn(new RuntimeBlastRadius(
+                        "orders-service",
+                        3,
+                        List.of(),
+                        List.of()
+                ));
+
+        var service = new EvidenceCoverageService(
+                postgres,
+                runtime,
+                traces
+        );
+
+        var changeSet = new PullRequestChangeSet(
+                "acme/orders#60",
+                List.of(new DetectedChange(
+                        ChangeKind.API_ENDPOINT,
+                        ChangeOperation.MODIFIED,
+                        "HTTP POST /orders",
+                        "OrderController.java",
+                        "changed lines belong to OrderController#create"
+                )),
+                List.of(new StaticOutboundCall(
+                        "OrderController#create",
+                        "payment-service",
+                        "HTTP POST /payments",
+                        "OpenFeign",
+                        "paymentClient.createPayment(orderId)"
+                ))
+        );
+
+        var coverage = service.evaluate(
+                changeSet,
+                "orders-service",
+                List.of()
+        );
+
+        assertThat(coverage)
+                .anySatisfy(item -> {
+                    assertThat(item.source())
+                            .isEqualTo(
+                                    EvidenceSource.STATIC_OUTBOUND
+                            );
+                    assertThat(item.status())
+                            .isEqualTo(
+                                    EvidenceStatus.AVAILABLE
+                            );
+                    assertThat(item.detail())
+                            .contains("1 static outbound");
+                });
+    }
+
+    @Test
+    void reportsNoStaticDataWithoutGuessingDynamicCalls() {
+        PostgresDependencyCollector postgres =
+                mock(PostgresDependencyCollector.class);
+        RuntimeDependencyService runtime =
+                mock(RuntimeDependencyService.class);
+        TraceCausalityService traces =
+                mock(TraceCausalityService.class);
+
+        when(runtime.blastRadius("orders-service", 3))
+                .thenReturn(new RuntimeBlastRadius(
+                        "orders-service",
+                        3,
+                        List.of(),
+                        List.of()
+                ));
+
+        var service = new EvidenceCoverageService(
+                postgres,
+                runtime,
+                traces
+        );
+
+        var coverage = service.evaluate(
+                endpointChangeSet(),
+                "orders-service",
+                List.of()
+        );
+
+        assertThat(coverage)
+                .anySatisfy(item -> {
+                    assertThat(item.source())
+                            .isEqualTo(
+                                    EvidenceSource.STATIC_OUTBOUND
+                            );
+                    assertThat(item.status())
+                            .isEqualTo(EvidenceStatus.NO_DATA);
+                });
+    }
+
 }
