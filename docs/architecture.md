@@ -40,16 +40,23 @@ OTLP/HTTP JSON traces
         v
    OTLP JSON adapter
         |
-        v
- Dedicated metadata database
- + runtime_dependency_route_edge
- + repository_service_mapping
-        |
-        +--> scheduled retention cleanup
+        +-----------------------------+
+        |                             |
+        v                             v
+ route dependency edges        short-lived trace spans
+        |                       trace/span/parent IDs
+        |                             |
+        v                             v
+ Dedicated metadata database   causal span-tree traversal
+ + runtime_dependency_route_edge      |
+ + repository_service_mapping         |
+ + trace_span                         |
+        |                             |
+        +--> scheduled retention <----+
         |
         v
  Cycle-safe bidirectional graph traversal
- callers + dependencies
+ callers + service-level dependencies
         |
         +--------------------------+
                                    |
@@ -160,9 +167,57 @@ frontend -> checkout -> orders
 
 The `checkout -> orders` edge must match the changed endpoint. The upstream `frontend -> checkout` edge does not need to use the same route because it represents a different hop.
 
-Downstream dependencies are intentionally not endpoint-filtered yet. Without trace-path causality, filtering them by the changed inbound route would overstate precision.
+Caller filtering remains route-aware through the aggregated runtime graph.
+
+Downstream dependencies are now narrowed further when retained trace lineage exists. The changed endpoint's matching `SERVER` spans become causal roots, and only descendant outbound `CLIENT` / `PRODUCER` spans are treated as endpoint-causal downstream impact.
 
 Legacy service-only edges migrate to endpoint `*`. Those edges remain useful for service-level topology but are not treated as precise endpoint matches.
+
+## Trace-path causality
+
+Trace lineage is stored separately from the longer-lived topology graph:
+
+```text
+trace_id
+span_id
+parent_span_id
+service_name
+target_service
+endpoint
+span_kind
+observed_at
+```
+
+No request bodies, response bodies, or arbitrary OpenTelemetry attribute bags are persisted.
+
+For a changed endpoint such as `HTTP POST /orders`, the analyzer:
+
+```text
+1. Finds retained SERVER spans:
+   orders-service [HTTP POST /orders]
+
+2. Loads all spans for those trace IDs.
+
+3. Reconstructs parent → child relationships.
+
+4. Walks descendants of each matching server span.
+
+5. Aggregates descendant CLIENT / PRODUCER calls:
+   source service
+   target service
+   outbound endpoint
+   observed call count
+   unique trace count
+   last seen
+```
+
+Because remote `SERVER` spans normally inherit the propagated client span as parent, traversal can cross multiple synchronous services within one trace.
+
+If at least one matching endpoint server span exists, causal downstream findings replace the broad downstream dependency set. If no matching trace path exists, the service-level downstream graph is retained as a fallback but those findings are downgraded to `POSSIBLE`.
+
+Trace lineage defaults to 24-hour retention while the aggregated topology graph defaults to 7 days.
+
+This is observational causality over retained traces, not exhaustive proof of all possible execution paths. Async producer→consumer relationships represented only by OpenTelemetry span links are not traversed in this version.
 
 ## Evidence model
 
@@ -182,4 +237,4 @@ PR reports therefore warn explicitly when coverage is incomplete rather than pre
 
 ## Next focused capability
 
-Add trace-path causality so the product can correlate an inbound changed endpoint with the specific downstream calls observed within traces for that endpoint, instead of treating every downstream dependency of the service as potentially affected.
+Add static outbound-call extraction for Java/Spring clients so endpoint-causal runtime evidence can be complemented by code-level API dependencies when production traces are sparse or sampled.

@@ -2,11 +2,14 @@ package com.srbmaury.blastradius.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
+import com.srbmaury.blastradius.domain.OtlpTraceBatch;
 import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
 import com.srbmaury.blastradius.domain.RuntimeDependencyGraph;
+import com.srbmaury.blastradius.domain.TraceCausalityResult;
 import com.srbmaury.blastradius.telemetry.OtlpJsonTraceAdapter;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
+import com.srbmaury.blastradius.telemetry.TraceCausalityService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,13 +27,16 @@ import java.util.Set;
 public class TelemetryController {
 
     private final RuntimeDependencyService dependencyService;
+    private final TraceCausalityService traceCausalityService;
     private final OtlpJsonTraceAdapter otlpJsonTraceAdapter;
 
     public TelemetryController(
             RuntimeDependencyService dependencyService,
+            TraceCausalityService traceCausalityService,
             OtlpJsonTraceAdapter otlpJsonTraceAdapter
     ) {
         this.dependencyService = dependencyService;
+        this.traceCausalityService = traceCausalityService;
         this.otlpJsonTraceAdapter = otlpJsonTraceAdapter;
     }
 
@@ -47,16 +53,22 @@ public class TelemetryController {
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
     public Map<String, Long> ingestOtlpJson(@RequestBody JsonNode payload) {
-        List<OpenTelemetrySpanObservation> observations =
-                otlpJsonTraceAdapter.extract(payload);
+        OtlpTraceBatch batch = otlpJsonTraceAdapter.extractBatch(payload);
 
-        long accepted = dependencyService.ingest(observations);
+        long dependencyAccepted = dependencyService.ingest(
+                batch.dependencyObservations()
+        );
+        long traceSpansAccepted = traceCausalityService.ingest(
+                batch.traceSpans()
+        );
 
         return Map.of(
-                "extracted",
-                (long) observations.size(),
-                "accepted",
-                accepted
+                "dependencyObservations",
+                (long) batch.dependencyObservations().size(),
+                "dependencyAccepted",
+                dependencyAccepted,
+                "traceSpans",
+                traceSpansAccepted
         );
     }
 
@@ -76,6 +88,14 @@ public class TelemetryController {
                 maxDepth,
                 endpoint == null ? Set.of() : endpoint
         );
+    }
+
+    @GetMapping("/trace-causality")
+    public TraceCausalityResult traceCausality(
+            @RequestParam String service,
+            @RequestParam Set<String> endpoint
+    ) {
+        return traceCausalityService.analyze(service, endpoint);
     }
 
     @GetMapping("/downstream")

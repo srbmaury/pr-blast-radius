@@ -8,10 +8,12 @@ import com.srbmaury.blastradius.domain.ImpactFinding;
 import com.srbmaury.blastradius.domain.PullRequestChangeSet;
 import com.srbmaury.blastradius.postgres.PostgresDependencyCollector;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
+import com.srbmaury.blastradius.telemetry.TraceCausalityService;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class EvidenceCoverageService {
@@ -20,13 +22,16 @@ public class EvidenceCoverageService {
 
     private final PostgresDependencyCollector postgresCollector;
     private final RuntimeDependencyService runtimeDependencyService;
+    private final TraceCausalityService traceCausalityService;
 
     public EvidenceCoverageService(
             PostgresDependencyCollector postgresCollector,
-            RuntimeDependencyService runtimeDependencyService
+            RuntimeDependencyService runtimeDependencyService,
+            TraceCausalityService traceCausalityService
     ) {
         this.postgresCollector = postgresCollector;
         this.runtimeDependencyService = runtimeDependencyService;
+        this.traceCausalityService = traceCausalityService;
     }
 
     public List<EvidenceCoverage> evaluate(
@@ -37,7 +42,8 @@ public class EvidenceCoverageService {
         return List.of(
                 postgresCoverage(changeSet, findings),
                 runtimeCoverage(rootService),
-                endpointCoverage(changeSet, rootService)
+                endpointCoverage(changeSet, rootService),
+                tracePathCoverage(changeSet, rootService)
         );
     }
 
@@ -97,7 +103,7 @@ public class EvidenceCoverageService {
             return new EvidenceCoverage(
                     EvidenceSource.ENDPOINT_RUNTIME,
                     EvidenceStatus.NOT_APPLICABLE,
-                    "PR contains no detected Spring endpoint mapping change"
+                    "PR contains no resolved API endpoint change"
             );
         }
 
@@ -165,6 +171,66 @@ public class EvidenceCoverageService {
                     EvidenceSource.ENDPOINT_RUNTIME,
                     EvidenceStatus.UNAVAILABLE,
                     "Runtime dependency metadata store is unavailable"
+            );
+        }
+    }
+
+    private EvidenceCoverage tracePathCoverage(
+            PullRequestChangeSet changeSet,
+            String rootService
+    ) {
+        Set<String> changedEndpoints = changeSet.changes().stream()
+                .filter(change -> change.kind() == ChangeKind.API_ENDPOINT)
+                .map(change -> change.identifier())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+        if (changedEndpoints.isEmpty()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.TRACE_PATH,
+                    EvidenceStatus.NOT_APPLICABLE,
+                    "PR contains no resolved API endpoint change"
+            );
+        }
+
+        if (rootService == null || rootService.isBlank()) {
+            return new EvidenceCoverage(
+                    EvidenceSource.TRACE_PATH,
+                    EvidenceStatus.NOT_CONFIGURED,
+                    "Trace-path analysis requires a repository-to-runtime-service mapping"
+            );
+        }
+
+        try {
+            var result = traceCausalityService.analyze(
+                    rootService,
+                    changedEndpoints
+            );
+
+            if (!result.hasMatchingTracePath()) {
+                return new EvidenceCoverage(
+                        EvidenceSource.TRACE_PATH,
+                        EvidenceStatus.NO_DATA,
+                        "No retained SERVER spans matched changed endpoint(s): "
+                                + String.join(", ", changedEndpoints)
+                );
+            }
+
+            return new EvidenceCoverage(
+                    EvidenceSource.TRACE_PATH,
+                    EvidenceStatus.AVAILABLE,
+                    "Matched "
+                            + result.matchedRootSpanCount()
+                            + " endpoint SERVER span(s) across "
+                            + result.matchedTraceCount()
+                            + " trace(s); observed "
+                            + result.downstreamEdges().size()
+                            + " causal downstream edge(s)"
+            );
+        } catch (DataAccessException ex) {
+            return new EvidenceCoverage(
+                    EvidenceSource.TRACE_PATH,
+                    EvidenceStatus.UNAVAILABLE,
+                    "Trace lineage metadata store is unavailable"
             );
         }
     }
