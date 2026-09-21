@@ -4,3 +4,4 @@ target/
 *.iml
 .env
 .DS_Store
+data/
