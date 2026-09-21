@@ -4,6 +4,7 @@ import com.srbmaury.blastradius.domain.OpenTelemetrySpanObservation;
 import com.srbmaury.blastradius.domain.RuntimeBlastRadius;
 import com.srbmaury.blastradius.domain.RuntimeDependencyEdge;
 import com.srbmaury.blastradius.domain.RuntimeDependencyGraph;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -19,7 +20,8 @@ import java.util.Set;
 @Service
 public class RuntimeDependencyService {
 
-    private static final Set<String> OUTBOUND_SPAN_KINDS = Set.of("CLIENT", "PRODUCER");
+    private static final Set<String> OUTBOUND_SPAN_KINDS =
+            Set.of("CLIENT", "PRODUCER");
 
     private final RuntimeDependencyStore store;
 
@@ -28,6 +30,13 @@ public class RuntimeDependencyService {
     }
 
     public boolean ingest(OpenTelemetrySpanObservation observation) {
+        return ingest(TenantIds.DEFAULT, observation);
+    }
+
+    public boolean ingest(
+            String tenantId,
+            OpenTelemetrySpanObservation observation
+    ) {
         if (observation == null) {
             return false;
         }
@@ -50,6 +59,7 @@ public class RuntimeDependencyService {
                 : observation.observedAt();
 
         store.record(
+                tenantId,
                 source,
                 target,
                 normalizeEndpoint(observation.endpoint()),
@@ -59,16 +69,34 @@ public class RuntimeDependencyService {
     }
 
     public long ingest(List<OpenTelemetrySpanObservation> observations) {
+        return ingest(TenantIds.DEFAULT, observations);
+    }
+
+    public long ingest(
+            String tenantId,
+            List<OpenTelemetrySpanObservation> observations
+    ) {
         if (observations == null || observations.isEmpty()) {
             return 0;
         }
 
         return observations.stream()
-                .filter(this::ingest)
+                .filter(observation -> ingest(tenantId, observation))
                 .count();
     }
 
-    public RuntimeDependencyGraph downstream(String rootService, int maxDepth) {
+    public RuntimeDependencyGraph downstream(
+            String rootService,
+            int maxDepth
+    ) {
+        return downstream(TenantIds.DEFAULT, rootService, maxDepth);
+    }
+
+    public RuntimeDependencyGraph downstream(
+            String tenantId,
+            String rootService,
+            int maxDepth
+    ) {
         String root = requireService(rootService);
         int depthLimit = Math.max(1, Math.min(maxDepth, 10));
 
@@ -86,7 +114,8 @@ public class RuntimeDependencyService {
                 continue;
             }
 
-            for (RuntimeDependencyEdge edge : store.outgoing(current.service())) {
+            for (RuntimeDependencyEdge edge :
+                    store.outgoing(tenantId, current.service())) {
                 collected.add(edge);
 
                 if (expanded.add(edge.targetService())) {
@@ -105,11 +134,33 @@ public class RuntimeDependencyService {
         );
     }
 
-    public RuntimeDependencyGraph callers(String rootService, int maxDepth) {
-        return callers(rootService, maxDepth, Set.of());
+    public RuntimeDependencyGraph callers(
+            String rootService,
+            int maxDepth
+    ) {
+        return callers(
+                TenantIds.DEFAULT,
+                rootService,
+                maxDepth,
+                Set.of()
+        );
     }
 
     public RuntimeDependencyGraph callers(
+            String rootService,
+            int maxDepth,
+            Set<String> changedEndpoints
+    ) {
+        return callers(
+                TenantIds.DEFAULT,
+                rootService,
+                maxDepth,
+                changedEndpoints
+        );
+    }
+
+    public RuntimeDependencyGraph callers(
+            String tenantId,
             String rootService,
             int maxDepth,
             Set<String> changedEndpoints
@@ -132,7 +183,8 @@ public class RuntimeDependencyService {
                 continue;
             }
 
-            for (RuntimeDependencyEdge edge : store.incoming(current.service())) {
+            for (RuntimeDependencyEdge edge :
+                    store.incoming(tenantId, current.service())) {
                 if (current.depth() == 0
                         && !endpointFilter.isEmpty()
                         && !endpointFilter.contains(edge.endpoint())) {
@@ -157,8 +209,16 @@ public class RuntimeDependencyService {
         );
     }
 
-    public RuntimeBlastRadius blastRadius(String rootService, int maxDepth) {
-        return blastRadius(rootService, maxDepth, Set.of());
+    public RuntimeBlastRadius blastRadius(
+            String rootService,
+            int maxDepth
+    ) {
+        return blastRadius(
+                TenantIds.DEFAULT,
+                rootService,
+                maxDepth,
+                Set.of()
+        );
     }
 
     public RuntimeBlastRadius blastRadius(
@@ -166,12 +226,31 @@ public class RuntimeDependencyService {
             int maxDepth,
             Set<String> changedEndpoints
     ) {
-        RuntimeDependencyGraph callers = callers(
+        return blastRadius(
+                TenantIds.DEFAULT,
                 rootService,
                 maxDepth,
                 changedEndpoints
         );
-        RuntimeDependencyGraph dependencies = downstream(rootService, maxDepth);
+    }
+
+    public RuntimeBlastRadius blastRadius(
+            String tenantId,
+            String rootService,
+            int maxDepth,
+            Set<String> changedEndpoints
+    ) {
+        RuntimeDependencyGraph callers = callers(
+                tenantId,
+                rootService,
+                maxDepth,
+                changedEndpoints
+        );
+        RuntimeDependencyGraph dependencies = downstream(
+                tenantId,
+                rootService,
+                maxDepth
+        );
 
         return new RuntimeBlastRadius(
                 callers.rootService(),
@@ -182,17 +261,33 @@ public class RuntimeDependencyService {
     }
 
     public List<RuntimeDependencyEdge> directCallers(String service) {
-        return store.incoming(requireService(service));
+        return directCallers(TenantIds.DEFAULT, service);
+    }
+
+    public List<RuntimeDependencyEdge> directCallers(
+            String tenantId,
+            String service
+    ) {
+        return store.incoming(
+                TenantIds.normalize(tenantId),
+                requireService(service)
+        );
     }
 
     public List<RuntimeDependencyEdge> allEdges() {
-        return store.all();
+        return allEdges(TenantIds.DEFAULT);
+    }
+
+    public List<RuntimeDependencyEdge> allEdges(String tenantId) {
+        return store.all(TenantIds.normalize(tenantId));
     }
 
     private String requireService(String service) {
         String normalized = normalizeService(service);
         if (normalized == null) {
-            throw new IllegalArgumentException("Service name is required");
+            throw new IllegalArgumentException(
+                    "Service name is required"
+            );
         }
         return normalized;
     }
@@ -205,7 +300,9 @@ public class RuntimeDependencyService {
     }
 
     private String normalizeEndpoint(String endpoint) {
-        return endpoint == null || endpoint.isBlank() ? "*" : endpoint.trim();
+        return endpoint == null || endpoint.isBlank()
+                ? "*"
+                : endpoint.trim();
     }
 
     private Set<String> normalizeEndpoints(Set<String> endpoints) {
@@ -219,5 +316,8 @@ public class RuntimeDependencyService {
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
-    private record ServiceAtDepth(String service, int depth) {}
+    private record ServiceAtDepth(
+            String service,
+            int depth
+    ) {}
 }
