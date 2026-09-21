@@ -6,14 +6,11 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
-import com.github.javaparser.ast.expr.StringLiteralExpr;
-import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.srbmaury.blastradius.domain.StaticOutboundCall;
 import org.springframework.stereotype.Component;
 
@@ -208,17 +205,20 @@ public class StaticOutboundCallAnalyzer {
             return Optional.empty();
         }
 
-        String httpMethod = REST_TEMPLATE_METHODS.get(
+        String resolvedHttpMethod = REST_TEMPLATE_METHODS.get(
                 call.getNameAsString()
         );
 
         if ("exchange".equals(call.getNameAsString())) {
-            httpMethod = exchangeMethod(call);
+            resolvedHttpMethod = exchangeMethod(call);
         }
 
-        if (httpMethod == null || call.getArguments().isEmpty()) {
+        if (resolvedHttpMethod == null
+                || call.getArguments().isEmpty()) {
             return Optional.empty();
         }
+
+        final String httpMethod = resolvedHttpMethod;
 
         Optional<String> literal = literalString(call.getArgument(0));
         if (literal.isEmpty()) {
