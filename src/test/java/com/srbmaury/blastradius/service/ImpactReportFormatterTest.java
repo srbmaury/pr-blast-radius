@@ -3,6 +3,9 @@ package com.srbmaury.blastradius.service;
 import com.srbmaury.blastradius.domain.ChangeKind;
 import com.srbmaury.blastradius.domain.ChangeOperation;
 import com.srbmaury.blastradius.domain.DetectedChange;
+import com.srbmaury.blastradius.domain.EvidenceCoverage;
+import com.srbmaury.blastradius.domain.EvidenceSource;
+import com.srbmaury.blastradius.domain.EvidenceStatus;
 import com.srbmaury.blastradius.domain.ImpactAnalysisResponse;
 import com.srbmaury.blastradius.domain.ImpactConfidence;
 import com.srbmaury.blastradius.domain.ImpactFinding;
@@ -18,7 +21,7 @@ class ImpactReportFormatterTest {
     private final ImpactReportFormatter formatter = new ImpactReportFormatter();
 
     @Test
-    void formatsChangesAndProductionEvidence() {
+    void formatsChangesProductionEvidenceAndCoverage() {
         var response = new ImpactAnalysisResponse(
                 new PullRequestChangeSet(
                         "acme/orders#42",
@@ -35,13 +38,27 @@ class ImpactReportFormatterTest {
                         "orders-service -> payment-service",
                         "runtime calls=8241",
                         ImpactConfidence.CONFIRMED
-                ))
+                )),
+                List.of(
+                        new EvidenceCoverage(
+                                EvidenceSource.POSTGRES_RUNTIME,
+                                EvidenceStatus.AVAILABLE,
+                                "Matching runtime SQL evidence was found"
+                        ),
+                        new EvidenceCoverage(
+                                EvidenceSource.SERVICE_RUNTIME,
+                                EvidenceStatus.AVAILABLE,
+                                "Observed downstream runtime edge"
+                        )
+                )
         );
 
         String report = formatter.toMarkdown(response);
 
         assertThat(report)
-                .contains("PR Blast Radius")
+                .contains("Evidence coverage")
+                .contains("POSTGRES_RUNTIME")
+                .contains("AVAILABLE")
                 .contains("orders.status")
                 .contains("payment-service")
                 .contains("CONFIRMED")
@@ -49,13 +66,26 @@ class ImpactReportFormatterTest {
     }
 
     @Test
-    void statesWhenNoProductionEvidenceIsAvailable() {
+    void warnsWhenNoFindingsButCoverageIsIncomplete() {
         var response = new ImpactAnalysisResponse(
                 new PullRequestChangeSet("raw-diff", List.of()),
-                List.of()
+                List.of(),
+                List.of(
+                        new EvidenceCoverage(
+                                EvidenceSource.POSTGRES_RUNTIME,
+                                EvidenceStatus.NOT_APPLICABLE,
+                                "No DB change"
+                        ),
+                        new EvidenceCoverage(
+                                EvidenceSource.SERVICE_RUNTIME,
+                                EvidenceStatus.NOT_CONFIGURED,
+                                "No repository/service mapping"
+                        )
+                )
         );
 
         assertThat(formatter.toMarkdown(response))
-                .contains("No confirmed production impact found");
+                .contains("coverage is incomplete")
+                .contains("Do not treat this result as proof that the change is safe");
     }
 }
