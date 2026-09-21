@@ -6,6 +6,7 @@ import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -25,17 +26,40 @@ public class RuntimeImpactService {
         }
 
         try {
-            return dependencyService.downstream(rootService, DEFAULT_MAX_DEPTH)
-                    .edges()
-                    .stream()
-                    .map(edge -> new ImpactFinding(
-                            edge.targetService(),
-                            edge.sourceService() + " -> " + edge.targetService(),
+            var radius = dependencyService.blastRadius(
+                    rootService,
+                    DEFAULT_MAX_DEPTH
+            );
+
+            List<ImpactFinding> findings = new ArrayList<>();
+
+            radius.callers().forEach(edge -> findings.add(
+                    new ImpactFinding(
+                            edge.sourceService(),
+                            edge.sourceService()
+                                    + " -> "
+                                    + edge.targetService()
+                                    + " (caller path into changed service)",
                             "runtime calls=" + edge.callCount()
                                     + ", lastSeen=" + edge.lastSeen(),
                             ImpactConfidence.CONFIRMED
-                    ))
-                    .toList();
+                    )
+            ));
+
+            radius.dependencies().forEach(edge -> findings.add(
+                    new ImpactFinding(
+                            edge.targetService(),
+                            edge.sourceService()
+                                    + " -> "
+                                    + edge.targetService()
+                                    + " (dependency path from changed service)",
+                            "runtime calls=" + edge.callCount()
+                                    + ", lastSeen=" + edge.lastSeen(),
+                            ImpactConfidence.CONFIRMED
+                    )
+            ));
+
+            return List.copyOf(findings);
         } catch (DataAccessException ex) {
             return List.of();
         }
