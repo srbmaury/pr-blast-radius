@@ -24,7 +24,7 @@ import static org.mockito.Mockito.when;
 class PullRequestAnalysisControllerTest {
 
     @Test
-    void resolvesServiceFromCatalogWhenRequestDoesNotProvideOne() {
+    void resolvesServiceFromTenantCatalogWhenRequestDoesNotProvideOne() {
         GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
         PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
         ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
@@ -45,14 +45,21 @@ class PullRequestAnalysisControllerTest {
                 "diff",
                 initial
         )).thenReturn(enriched);
-        when(catalog.find("acme/orders")).thenReturn(Optional.of(
+        when(catalog.find(
+                "tenant-a",
+                "acme/orders"
+        )).thenReturn(Optional.of(
                 new RepositoryServiceMapping(
                         "acme/orders",
                         "orders-service",
                         Instant.now()
                 )
         ));
-        when(analysis.analyze(enriched, "orders-service")).thenReturn(expected);
+        when(analysis.analyze(
+                "tenant-a",
+                enriched,
+                "orders-service"
+        )).thenReturn(expected);
 
         var controller = new PullRequestAnalysisController(
                 github,
@@ -67,14 +74,19 @@ class PullRequestAnalysisControllerTest {
                 "acme",
                 "orders",
                 42,
-                null
+                null,
+                "tenant-a"
         )).isSameAs(expected);
 
-        verify(analysis).analyze(enriched, "orders-service");
+        verify(analysis).analyze(
+                "tenant-a",
+                enriched,
+                "orders-service"
+        );
     }
 
     @Test
-    void explicitServiceOverridesCatalog() {
+    void explicitServiceOverridesTenantCatalog() {
         GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
         PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
         ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
@@ -95,7 +107,11 @@ class PullRequestAnalysisControllerTest {
                 "diff",
                 initial
         )).thenReturn(enriched);
-        when(analysis.analyze(enriched, "manual-service")).thenReturn(expected);
+        when(analysis.analyze(
+                "tenant-a",
+                enriched,
+                "manual-service"
+        )).thenReturn(expected);
 
         var controller = new PullRequestAnalysisController(
                 github,
@@ -110,10 +126,65 @@ class PullRequestAnalysisControllerTest {
                 "acme",
                 "orders",
                 42,
-                "manual-service"
+                "manual-service",
+                "tenant-a"
         )).isSameAs(expected);
 
-        verify(analysis).analyze(enriched, "manual-service");
+        verify(analysis).analyze(
+                "tenant-a",
+                enriched,
+                "manual-service"
+        );
         verifyNoInteractions(catalog);
+    }
+
+    @Test
+    void missingTenantHeaderUsesDefaultTenant() {
+        GitHubPullRequestClient github = mock(GitHubPullRequestClient.class);
+        PullRequestDiffParser parser = mock(PullRequestDiffParser.class);
+        ImpactAnalysisService analysis = mock(ImpactAnalysisService.class);
+        ImpactReportFormatter formatter = mock(ImpactReportFormatter.class);
+        RepositoryServiceCatalog catalog = mock(RepositoryServiceCatalog.class);
+        SourceAwarePullRequestEnricher enricher = mock(SourceAwarePullRequestEnricher.class);
+
+        var initial = new PullRequestChangeSet("acme/orders#42", List.of());
+        var enriched = new PullRequestChangeSet("acme/orders#42", List.of());
+        var expected = new ImpactAnalysisResponse(enriched, List.of());
+
+        when(github.fetchDiff("acme", "orders", 42)).thenReturn("diff");
+        when(parser.parse("acme/orders#42", "diff")).thenReturn(initial);
+        when(enricher.enrich(
+                "acme",
+                "orders",
+                42,
+                "diff",
+                initial
+        )).thenReturn(enriched);
+        when(catalog.find(
+                "default",
+                "acme/orders"
+        )).thenReturn(Optional.empty());
+        when(analysis.analyze(
+                "default",
+                enriched,
+                null
+        )).thenReturn(expected);
+
+        var controller = new PullRequestAnalysisController(
+                github,
+                parser,
+                analysis,
+                formatter,
+                catalog,
+                enricher
+        );
+
+        assertThat(controller.analyzeGitHubPullRequestImpact(
+                "acme",
+                "orders",
+                42,
+                null,
+                null
+        )).isSameAs(expected);
     }
 }

@@ -1,8 +1,10 @@
 package com.srbmaury.blastradius.telemetry;
 
 import com.srbmaury.blastradius.domain.TraceSpanObservation;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
 public class TraceSpanStore {
 
     private static final int TRACE_QUERY_BATCH_SIZE = 100;
+    private static final String TABLE = "tenant_trace_span";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -30,7 +33,8 @@ public class TraceSpanStore {
     @PostConstruct
     public void initialize() {
         jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS trace_span (
+                CREATE TABLE IF NOT EXISTS tenant_trace_span (
+                    tenant_id VARCHAR(128) NOT NULL,
                     trace_id VARCHAR(64) NOT NULL,
                     span_id VARCHAR(32) NOT NULL,
                     parent_span_id VARCHAR(32),
@@ -39,47 +43,33 @@ public class TraceSpanStore {
                     endpoint VARCHAR(1024) NOT NULL,
                     span_kind VARCHAR(32) NOT NULL,
                     observed_at TIMESTAMP NOT NULL,
-                    PRIMARY KEY (trace_id, span_id)
+                    PRIMARY KEY (tenant_id, trace_id, span_id)
                 )
                 """);
 
         jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_trace_span_service_kind_time
-                ON trace_span (service_name, span_kind, observed_at)
+                CREATE INDEX IF NOT EXISTS idx_tenant_trace_span_service_kind_time
+                ON tenant_trace_span (
+                    tenant_id,
+                    service_name,
+                    span_kind,
+                    observed_at
+                )
                 """);
 
         jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_trace_span_trace
-                ON trace_span (trace_id)
+                CREATE INDEX IF NOT EXISTS idx_tenant_trace_span_trace
+                ON tenant_trace_span (tenant_id, trace_id)
                 """);
+
+        migrateLegacyTraceSpans();
     }
 
-    public synchronized void save(TraceSpanObservation span) {
-        int updated = jdbcTemplate.update(
-                """
-                UPDATE trace_span
-                SET parent_span_id = ?,
-                    service_name = ?,
-                    target_service = ?,
-                    endpoint = ?,
-                    span_kind = ?,
-                    observed_at = ?
-                WHERE trace_id = ? AND span_id = ?
-                """,
-                normalizeNullable(span.parentSpanId()),
-                span.serviceName(),
-                normalizeNullable(span.targetService()),
-                normalizeEndpoint(span.endpoint()),
-                span.spanKind(),
-                Timestamp.from(span.observedAt()),
-                span.traceId(),
-                span.spanId()
-        );
-
-        if (updated == 0) {
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO trace_span (
+    private void migrateLegacyTraceSpans() {
+        try {
+            jdbcTemplate.update("""
+                    INSERT INTO tenant_trace_span (
+                        tenant_id,
                         trace_id,
                         span_id,
                         parent_span_id,
@@ -88,8 +78,82 @@ public class TraceSpanStore {
                         endpoint,
                         span_kind,
                         observed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    )
+                    SELECT
+                        'default',
+                        legacy.trace_id,
+                        legacy.span_id,
+                        legacy.parent_span_id,
+                        legacy.service_name,
+                        legacy.target_service,
+                        legacy.endpoint,
+                        legacy.span_kind,
+                        legacy.observed_at
+                    FROM trace_span legacy
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM tenant_trace_span scoped
+                        WHERE scoped.tenant_id = 'default'
+                          AND scoped.trace_id = legacy.trace_id
+                          AND scoped.span_id = legacy.span_id
+                    )
+                    """);
+            jdbcTemplate.execute("DROP TABLE trace_span");
+        } catch (DataAccessException ignored) {
+            // Fresh installations do not have the pre-tenant table.
+        }
+    }
+
+    public synchronized void save(TraceSpanObservation span) {
+        save(TenantIds.DEFAULT, span);
+    }
+
+    public synchronized void save(
+            String tenantId,
+            TraceSpanObservation span
+    ) {
+        String tenant = TenantIds.normalize(tenantId);
+
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE tenant_trace_span
+                SET parent_span_id = ?,
+                    service_name = ?,
+                    target_service = ?,
+                    endpoint = ?,
+                    span_kind = ?,
+                    observed_at = ?
+                WHERE tenant_id = ?
+                  AND trace_id = ?
+                  AND span_id = ?
+                """,
+                normalizeNullable(span.parentSpanId()),
+                span.serviceName(),
+                normalizeNullable(span.targetService()),
+                normalizeEndpoint(span.endpoint()),
+                span.spanKind(),
+                Timestamp.from(span.observedAt()),
+                tenant,
+                span.traceId(),
+                span.spanId()
+        );
+
+        if (updated == 0) {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO tenant_trace_span (
+                        tenant_id,
+                        trace_id,
+                        span_id,
+                        parent_span_id,
+                        service_name,
+                        target_service,
+                        endpoint,
+                        span_kind,
+                        observed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
+                    tenant,
                     span.traceId(),
                     span.spanId(),
                     normalizeNullable(span.parentSpanId()),
@@ -103,11 +167,18 @@ public class TraceSpanStore {
     }
 
     public long saveAll(Collection<TraceSpanObservation> spans) {
+        return saveAll(TenantIds.DEFAULT, spans);
+    }
+
+    public long saveAll(
+            String tenantId,
+            Collection<TraceSpanObservation> spans
+    ) {
         if (spans == null || spans.isEmpty()) {
             return 0;
         }
 
-        spans.forEach(this::save);
+        spans.forEach(span -> save(tenantId, span));
         return spans.size();
     }
 
@@ -116,11 +187,26 @@ public class TraceSpanStore {
             Set<String> endpoints,
             int limit
     ) {
+        return findServerSpans(
+                TenantIds.DEFAULT,
+                serviceName,
+                endpoints,
+                limit
+        );
+    }
+
+    public List<TraceSpanObservation> findServerSpans(
+            String tenantId,
+            String serviceName,
+            Set<String> endpoints,
+            int limit
+    ) {
         int boundedLimit = Math.max(1, Math.min(limit, 5000));
         Set<String> normalizedEndpoints = endpoints == null
                 ? Set.of()
                 : endpoints.stream()
-                        .filter(endpoint -> endpoint != null && !endpoint.isBlank())
+                        .filter(endpoint ->
+                                endpoint != null && !endpoint.isBlank())
                         .map(String::trim)
                         .collect(Collectors.toUnmodifiableSet());
 
@@ -141,16 +227,20 @@ public class TraceSpanStore {
                        endpoint,
                        span_kind,
                        observed_at
-                FROM trace_span
-                WHERE service_name = ?
+                FROM tenant_trace_span
+                WHERE tenant_id = ?
+                  AND service_name = ?
                   AND span_kind = 'SERVER'
                 """
                 + endpointPredicate
                 + "\nORDER BY observed_at DESC\nLIMIT ?";
 
         List<Object> args = new ArrayList<>();
+        args.add(TenantIds.normalize(tenantId));
         args.add(serviceName);
-        args.addAll(normalizedEndpoints.stream().sorted().toList());
+        args.addAll(
+                normalizedEndpoints.stream().sorted().toList()
+        );
         args.add(boundedLimit);
 
         return jdbcTemplate.query(
@@ -169,7 +259,16 @@ public class TraceSpanStore {
         );
     }
 
-    public List<TraceSpanObservation> findByTraceIds(Set<String> traceIds) {
+    public List<TraceSpanObservation> findByTraceIds(
+            Set<String> traceIds
+    ) {
+        return findByTraceIds(TenantIds.DEFAULT, traceIds);
+    }
+
+    public List<TraceSpanObservation> findByTraceIds(
+            String tenantId,
+            Set<String> traceIds
+    ) {
         if (traceIds == null || traceIds.isEmpty()) {
             return List.of();
         }
@@ -180,12 +279,21 @@ public class TraceSpanStore {
 
         List<TraceSpanObservation> result = new ArrayList<>();
 
-        for (int start = 0; start < ordered.size(); start += TRACE_QUERY_BATCH_SIZE) {
-            int end = Math.min(start + TRACE_QUERY_BATCH_SIZE, ordered.size());
+        for (int start = 0;
+             start < ordered.size();
+             start += TRACE_QUERY_BATCH_SIZE) {
+            int end = Math.min(
+                    start + TRACE_QUERY_BATCH_SIZE,
+                    ordered.size()
+            );
             List<String> batch = ordered.subList(start, end);
             String placeholders = batch.stream()
                     .map(ignored -> "?")
                     .collect(Collectors.joining(","));
+
+            List<Object> args = new ArrayList<>();
+            args.add(TenantIds.normalize(tenantId));
+            args.addAll(batch);
 
             result.addAll(jdbcTemplate.query(
                     """
@@ -197,8 +305,9 @@ public class TraceSpanStore {
                            endpoint,
                            span_kind,
                            observed_at
-                    FROM trace_span
-                    WHERE trace_id IN (%s)
+                    FROM tenant_trace_span
+                    WHERE tenant_id = ?
+                      AND trace_id IN (%s)
                     ORDER BY trace_id, observed_at
                     """.formatted(placeholders),
                     (rs, rowNum) -> mapSpan(
@@ -211,7 +320,7 @@ public class TraceSpanStore {
                             rs.getString("span_kind"),
                             rs.getTimestamp("observed_at")
                     ),
-                    batch.toArray()
+                    args.toArray()
             ));
         }
 
@@ -220,13 +329,20 @@ public class TraceSpanStore {
 
     public int deleteOlderThan(Instant cutoff) {
         return jdbcTemplate.update(
-                "DELETE FROM trace_span WHERE observed_at < ?",
+                "DELETE FROM " + TABLE + " WHERE observed_at < ?",
                 Timestamp.from(cutoff)
         );
     }
 
     public void clear() {
-        jdbcTemplate.update("DELETE FROM trace_span");
+        clear(TenantIds.DEFAULT);
+    }
+
+    public void clear(String tenantId) {
+        jdbcTemplate.update(
+                "DELETE FROM " + TABLE + " WHERE tenant_id = ?",
+                TenantIds.normalize(tenantId)
+        );
     }
 
     private TraceSpanObservation mapSpan(
@@ -252,10 +368,14 @@ public class TraceSpanStore {
     }
 
     private String normalizeEndpoint(String endpoint) {
-        return endpoint == null || endpoint.isBlank() ? "*" : endpoint.trim();
+        return endpoint == null || endpoint.isBlank()
+                ? "*"
+                : endpoint.trim();
     }
 
     private String normalizeNullable(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+        return value == null || value.isBlank()
+                ? null
+                : value.trim();
     }
 }

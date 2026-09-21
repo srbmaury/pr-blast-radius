@@ -57,4 +57,42 @@ class RepositoryServiceCatalogTest {
         assertThat(catalog.delete("acme/orders")).isTrue();
         assertThat(catalog.find("acme/orders")).isEmpty();
     }
+
+    @Test
+    void isolatesSameRepositoryAcrossTenants() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        var catalog = new RepositoryServiceCatalog(jdbcTemplate);
+        catalog.initialize();
+
+        catalog.put(
+                "tenant-a",
+                "acme/orders",
+                "orders-a"
+        );
+        catalog.put(
+                "tenant-b",
+                "acme/orders",
+                "orders-b"
+        );
+
+        assertThat(catalog.find(
+                "tenant-a",
+                "acme/orders"
+        )).get().extracting(mapping -> mapping.service())
+                .isEqualTo("orders-a");
+
+        assertThat(catalog.find(
+                "tenant-b",
+                "acme/orders"
+        )).get().extracting(mapping -> mapping.service())
+                .isEqualTo("orders-b");
+    }
+
 }

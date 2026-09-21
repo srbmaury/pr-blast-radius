@@ -9,6 +9,7 @@ import com.srbmaury.blastradius.domain.PullRequestChangeSet;
 import com.srbmaury.blastradius.postgres.PostgresDependencyCollector;
 import com.srbmaury.blastradius.telemetry.RuntimeDependencyService;
 import com.srbmaury.blastradius.telemetry.TraceCausalityService;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -39,19 +40,48 @@ public class EvidenceCoverageService {
             String rootService,
             List<ImpactFinding> findings
     ) {
+        return evaluate(
+                TenantIds.DEFAULT,
+                changeSet,
+                rootService,
+                findings
+        );
+    }
+
+    public List<EvidenceCoverage> evaluate(
+            String tenantId,
+            PullRequestChangeSet changeSet,
+            String rootService,
+            List<ImpactFinding> findings
+    ) {
         return List.of(
-                postgresCoverage(changeSet, findings),
-                runtimeCoverage(rootService),
-                endpointCoverage(changeSet, rootService),
-                tracePathCoverage(changeSet, rootService),
+                postgresCoverage(
+                        tenantId,
+                        changeSet,
+                        findings
+                ),
+                runtimeCoverage(tenantId, rootService),
+                endpointCoverage(tenantId, changeSet, rootService),
+                tracePathCoverage(tenantId, changeSet, rootService),
                 staticOutboundCoverage(changeSet)
         );
     }
 
     private EvidenceCoverage postgresCoverage(
+            String tenantId,
             PullRequestChangeSet changeSet,
             List<ImpactFinding> findings
     ) {
+        if (!TenantIds.DEFAULT.equals(
+                TenantIds.normalize(tenantId)
+        )) {
+            return new EvidenceCoverage(
+                    EvidenceSource.POSTGRES_RUNTIME,
+                    EvidenceStatus.NOT_CONFIGURED,
+                    "Hosted tenant PostgreSQL evidence requires a tenant-specific datasource; the deployment-scoped datasource is not shared across tenants"
+            );
+        }
+
         boolean hasDatabaseChange = changeSet.changes().stream()
                 .anyMatch(change -> change.kind() == ChangeKind.DATABASE_TABLE
                         || change.kind() == ChangeKind.DATABASE_COLUMN);
@@ -91,6 +121,7 @@ public class EvidenceCoverageService {
     }
 
     private EvidenceCoverage endpointCoverage(
+            String tenantId,
             PullRequestChangeSet changeSet,
             String rootService
     ) {
@@ -117,7 +148,10 @@ public class EvidenceCoverageService {
         }
 
         try {
-            var callers = runtimeDependencyService.directCallers(rootService);
+            var callers = runtimeDependencyService.directCallers(
+                    tenantId,
+                    rootService
+            );
 
             if (callers.isEmpty()) {
                 return new EvidenceCoverage(
@@ -177,6 +211,7 @@ public class EvidenceCoverageService {
     }
 
     private EvidenceCoverage tracePathCoverage(
+            String tenantId,
             PullRequestChangeSet changeSet,
             String rootService
     ) {
@@ -203,6 +238,7 @@ public class EvidenceCoverageService {
 
         try {
             var result = traceCausalityService.analyze(
+                    tenantId,
                     rootService,
                     changedEndpoints
             );
@@ -272,7 +308,10 @@ public class EvidenceCoverageService {
         );
     }
 
-    private EvidenceCoverage runtimeCoverage(String rootService) {
+    private EvidenceCoverage runtimeCoverage(
+            String tenantId,
+            String rootService
+    ) {
         if (rootService == null || rootService.isBlank()) {
             return new EvidenceCoverage(
                     EvidenceSource.SERVICE_RUNTIME,
@@ -283,8 +322,10 @@ public class EvidenceCoverageService {
 
         try {
             var radius = runtimeDependencyService.blastRadius(
+                    tenantId,
                     rootService,
-                    RUNTIME_DEPTH
+                    RUNTIME_DEPTH,
+                    Set.of()
             );
 
             if (radius.totalEdges() == 0) {

@@ -41,12 +41,48 @@ Findings are evidence-based:
 - Persistent runtime dependency edges in a dedicated metadata database
 - TTL-based cleanup of stale runtime edges
 - Persistent repository → runtime service catalog
+- Tenant-scoped runtime edges, trace lineage, and repository/service mappings
 - Automatic service resolution for GitHub PR analysis
 - Combined DB + runtime impact analysis
 - Concise Markdown blast-radius report
 - Explicit API to publish the report as a GitHub PR comment
 - Evidence coverage states for PostgreSQL and runtime-service telemetry
 - Explicit warnings when missing telemetry prevents a trustworthy safety conclusion
+
+## Tenant isolation
+
+Product metadata is partitioned by a normalized tenant id. Runtime dependency edges, retained trace spans, and repository → service mappings all include tenant scope in their keys.
+
+Existing single-tenant integrations remain compatible through the built-in tenant:
+
+```text
+default
+```
+
+Tenant-aware API calls use:
+
+```http
+X-Tenant-ID: acme
+```
+
+For example:
+
+```http
+POST /api/v1/telemetry/otlp-json/v1/traces
+X-Tenant-ID: acme
+
+GET /api/v1/pr/acme/orders/42/impact
+X-Tenant-ID: acme
+
+PUT /api/v1/catalog/repositories/acme/orders
+X-Tenant-ID: acme
+```
+
+The same service or repository name can therefore exist independently in multiple tenants.
+
+Pre-tenant metadata is migrated once into the `default` tenant. Legacy tables are removed after successful migration so deleted data cannot be resurrected on a later restart.
+
+The currently configured customer PostgreSQL datasource remains deployment-scoped. To prevent cross-customer evidence leakage, PostgreSQL runtime evidence is disabled for non-default tenants until tenant-specific database connections are implemented.
 
 ## Repository → service catalog
 
@@ -389,6 +425,7 @@ The current static traversal follows the changed method plus same-class helper c
 
 - OTLP/HTTP JSON is supported, but native protobuf OTLP is not.
 - Repository/service mapping is explicit rather than inferred.
+- Hosted tenant PostgreSQL evidence is not enabled yet; non-default tenants currently use static + telemetry evidence only.
 - Source-aware endpoint ownership and static outbound extraction currently require literal route/service values. Custom composed annotations, path constants, property-driven client names, and dynamically constructed URLs are not resolved yet.
 - Static call traversal is intra-class except for resolvable OpenFeign interface definitions; arbitrary cross-class service call chains are not followed yet.
 - Asynchronous messaging causality through OpenTelemetry span links is not reconstructed yet.

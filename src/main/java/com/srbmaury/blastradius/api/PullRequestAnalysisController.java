@@ -8,11 +8,13 @@ import com.srbmaury.blastradius.ingestion.PullRequestDiffParser;
 import com.srbmaury.blastradius.service.ImpactAnalysisService;
 import com.srbmaury.blastradius.service.ImpactReportFormatter;
 import com.srbmaury.blastradius.service.SourceAwarePullRequestEnricher;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,6 +24,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/pr")
 public class PullRequestAnalysisController {
+
+    private static final String TENANT_HEADER = "X-Tenant-ID";
 
     private final GitHubPullRequestClient githubClient;
     private final PullRequestDiffParser diffParser;
@@ -52,10 +56,133 @@ public class PullRequestAnalysisController {
             @PathVariable String repo,
             @PathVariable long number
     ) {
+        return analyzeGitHubPullRequestInternal(
+                owner,
+                repo,
+                number
+        );
+    }
+
+    @GetMapping("/{owner}/{repo}/{number}/impact")
+    public ImpactAnalysisResponse analyzeGitHubPullRequestImpact(
+            @PathVariable String owner,
+            @PathVariable String repo,
+            @PathVariable long number,
+            @RequestParam(required = false) String service,
+            @RequestHeader(
+                    value = TENANT_HEADER,
+                    required = false
+            ) String tenantId
+    ) {
+        String tenant = TenantIds.normalize(tenantId);
+        PullRequestChangeSet changeSet =
+                analyzeGitHubPullRequestInternal(
+                        owner,
+                        repo,
+                        number
+                );
+
+        String resolvedService = resolveService(
+                tenant,
+                owner + "/" + repo,
+                service
+        );
+
+        return impactAnalysisService.analyze(
+                tenant,
+                changeSet,
+                resolvedService
+        );
+    }
+
+    @PostMapping("/{owner}/{repo}/{number}/comment")
+    public Map<String, Object> publishImpactComment(
+            @PathVariable String owner,
+            @PathVariable String repo,
+            @PathVariable long number,
+            @RequestParam(required = false) String service,
+            @RequestHeader(
+                    value = TENANT_HEADER,
+                    required = false
+            ) String tenantId
+    ) {
+        String tenant = TenantIds.normalize(tenantId);
+        PullRequestChangeSet changeSet =
+                analyzeGitHubPullRequestInternal(
+                        owner,
+                        repo,
+                        number
+                );
+        String resolvedService = resolveService(
+                tenant,
+                owner + "/" + repo,
+                service
+        );
+        ImpactAnalysisResponse response =
+                impactAnalysisService.analyze(
+                        tenant,
+                        changeSet,
+                        resolvedService
+                );
+
+        String report = reportFormatter.toMarkdown(response);
+        githubClient.postComment(owner, repo, number, report);
+
+        return Map.of(
+                "posted",
+                true,
+                "tenant",
+                tenant,
+                "report",
+                report
+        );
+    }
+
+    @PostMapping(
+            path = "/diff/changes",
+            consumes = MediaType.TEXT_PLAIN_VALUE
+    )
+    public PullRequestChangeSet analyzeRawDiff(
+            @RequestBody String diff
+    ) {
+        return diffParser.parse("raw-diff", diff);
+    }
+
+    @PostMapping(
+            path = "/diff/impact",
+            consumes = MediaType.TEXT_PLAIN_VALUE
+    )
+    public ImpactAnalysisResponse analyzeRawDiffImpact(
+            @RequestBody String diff,
+            @RequestParam(required = false) String service,
+            @RequestHeader(
+                    value = TENANT_HEADER,
+                    required = false
+            ) String tenantId
+    ) {
+        PullRequestChangeSet changeSet =
+                analyzeRawDiff(diff);
+
+        return impactAnalysisService.analyze(
+                TenantIds.normalize(tenantId),
+                changeSet,
+                service
+        );
+    }
+
+    private PullRequestChangeSet analyzeGitHubPullRequestInternal(
+            String owner,
+            String repo,
+            long number
+    ) {
         validateRepositoryPart(owner);
         validateRepositoryPart(repo);
 
-        String diff = githubClient.fetchDiff(owner, repo, number);
+        String diff = githubClient.fetchDiff(
+                owner,
+                repo,
+                number
+        );
         PullRequestChangeSet initial = diffParser.parse(
                 owner + "/" + repo + "#" + number,
                 diff
@@ -70,90 +197,27 @@ public class PullRequestAnalysisController {
         );
     }
 
-    @GetMapping("/{owner}/{repo}/{number}/impact")
-    public ImpactAnalysisResponse analyzeGitHubPullRequestImpact(
-            @PathVariable String owner,
-            @PathVariable String repo,
-            @PathVariable long number,
-            @RequestParam(required = false) String service
-    ) {
-        PullRequestChangeSet changeSet = analyzeGitHubPullRequest(
-                owner,
-                repo,
-                number
-        );
-
-        String resolvedService = resolveService(
-                owner + "/" + repo,
-                service
-        );
-
-        return impactAnalysisService.analyze(
-                changeSet,
-                resolvedService
-        );
-    }
-
-    @PostMapping("/{owner}/{repo}/{number}/comment")
-    public Map<String, Object> publishImpactComment(
-            @PathVariable String owner,
-            @PathVariable String repo,
-            @PathVariable long number,
-            @RequestParam(required = false) String service
-    ) {
-        ImpactAnalysisResponse response = analyzeGitHubPullRequestImpact(
-                owner,
-                repo,
-                number,
-                service
-        );
-
-        String report = reportFormatter.toMarkdown(response);
-        githubClient.postComment(owner, repo, number, report);
-
-        return Map.of(
-                "posted",
-                true,
-                "report",
-                report
-        );
-    }
-
-    @PostMapping(
-            path = "/diff/changes",
-            consumes = MediaType.TEXT_PLAIN_VALUE
-    )
-    public PullRequestChangeSet analyzeRawDiff(@RequestBody String diff) {
-        return diffParser.parse("raw-diff", diff);
-    }
-
-    @PostMapping(
-            path = "/diff/impact",
-            consumes = MediaType.TEXT_PLAIN_VALUE
-    )
-    public ImpactAnalysisResponse analyzeRawDiffImpact(
-            @RequestBody String diff,
-            @RequestParam(required = false) String service
-    ) {
-        PullRequestChangeSet changeSet = analyzeRawDiff(diff);
-        return impactAnalysisService.analyze(changeSet, service);
-    }
-
     private String resolveService(
+            String tenantId,
             String repository,
             String explicitService
     ) {
-        if (explicitService != null && !explicitService.isBlank()) {
+        if (explicitService != null
+                && !explicitService.isBlank()) {
             return explicitService.trim();
         }
 
-        return serviceCatalog.find(repository)
+        return serviceCatalog.find(
+                        tenantId,
+                        repository
+                )
                 .map(mapping -> mapping.service())
                 .orElse(null);
     }
 
     private void validateRepositoryPart(String value) {
-        if (value == null || !value.matches("[A-Za-z0-9_.-]+")) {
+        if (value == null
+                || !value.matches("[A-Za-z0-9_.-]+")) {
             throw new IllegalArgumentException(
                     "Invalid GitHub owner or repository name"
             );

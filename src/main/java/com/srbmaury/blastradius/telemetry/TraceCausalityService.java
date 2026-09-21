@@ -3,6 +3,7 @@ package com.srbmaury.blastradius.telemetry;
 import com.srbmaury.blastradius.domain.TraceCausalEdge;
 import com.srbmaury.blastradius.domain.TraceCausalityResult;
 import com.srbmaury.blastradius.domain.TraceSpanObservation;
+import com.srbmaury.blastradius.tenant.TenantIds;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -37,10 +38,29 @@ public class TraceCausalityService {
     }
 
     public long ingest(List<TraceSpanObservation> spans) {
-        return store.saveAll(spans);
+        return ingest(TenantIds.DEFAULT, spans);
+    }
+
+    public long ingest(
+            String tenantId,
+            List<TraceSpanObservation> spans
+    ) {
+        return store.saveAll(tenantId, spans);
     }
 
     public TraceCausalityResult analyze(
+            String rootService,
+            Set<String> changedEndpoints
+    ) {
+        return analyze(
+                TenantIds.DEFAULT,
+                rootService,
+                changedEndpoints
+        );
+    }
+
+    public TraceCausalityResult analyze(
+            String tenantId,
             String rootService,
             Set<String> changedEndpoints
     ) {
@@ -53,6 +73,7 @@ public class TraceCausalityService {
         }
 
         List<TraceSpanObservation> roots = store.findServerSpans(
+                tenantId,
                 rootService.trim(),
                 normalizedEndpoints,
                 maxRootSpans
@@ -67,7 +88,9 @@ public class TraceCausalityService {
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
 
         Map<String, List<TraceSpanObservation>> spansByTrace =
-                groupByTrace(store.findByTraceIds(traceIds));
+                groupByTrace(
+                        store.findByTraceIds(tenantId, traceIds)
+                );
 
         Map<EdgeKey, EdgeAggregate> aggregates = new LinkedHashMap<>();
 

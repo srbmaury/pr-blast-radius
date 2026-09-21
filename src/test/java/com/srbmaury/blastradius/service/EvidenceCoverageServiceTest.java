@@ -344,4 +344,53 @@ class EvidenceCoverageServiceTest {
                 });
     }
 
+
+    @Test
+    void hostedTenantDoesNotUseDeploymentScopedPostgresDatasource() {
+        PostgresDependencyCollector postgres =
+                mock(PostgresDependencyCollector.class);
+        RuntimeDependencyService runtime =
+                mock(RuntimeDependencyService.class);
+        TraceCausalityService traces =
+                mock(TraceCausalityService.class);
+
+        var service = new EvidenceCoverageService(
+                postgres,
+                runtime,
+                traces
+        );
+
+        var changeSet = new PullRequestChangeSet(
+                "acme/orders#70",
+                List.of(new DetectedChange(
+                        ChangeKind.DATABASE_COLUMN,
+                        ChangeOperation.MODIFIED,
+                        "orders.status",
+                        "V10__orders.sql",
+                        "ALTER TABLE orders ..."
+                ))
+        );
+
+        var coverage = service.evaluate(
+                "tenant-a",
+                changeSet,
+                null,
+                List.of()
+        );
+
+        assertThat(coverage)
+                .anySatisfy(item -> {
+                    assertThat(item.source())
+                            .isEqualTo(
+                                    EvidenceSource.POSTGRES_RUNTIME
+                            );
+                    assertThat(item.status())
+                            .isEqualTo(
+                                    EvidenceStatus.NOT_CONFIGURED
+                            );
+                });
+
+        org.mockito.Mockito.verifyNoInteractions(postgres);
+    }
+
 }
