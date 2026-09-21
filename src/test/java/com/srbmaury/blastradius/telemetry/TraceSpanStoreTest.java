@@ -119,4 +119,54 @@ class TraceSpanStoreTest {
                 observedAt
         );
     }
+
+    @Test
+    void isolatesIdenticalTraceIdsAcrossTenants() {
+        JdbcTemplate jdbc = new JdbcTemplate(
+                new DriverManagerDataSource(
+                        "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
+                        "sa",
+                        ""
+                )
+        );
+
+        var store = new TraceSpanStore(jdbc);
+        store.initialize();
+
+        var tenantASpan = span(
+                "shared-trace",
+                "server-1",
+                "",
+                "orders-service",
+                null,
+                "HTTP POST /orders",
+                "SERVER",
+                Instant.parse("2026-09-21T10:00:00Z")
+        );
+
+        var tenantBSpan = span(
+                "shared-trace",
+                "server-1",
+                "",
+                "orders-service",
+                null,
+                "HTTP GET /orders/{id}",
+                "SERVER",
+                Instant.parse("2026-09-21T10:01:00Z")
+        );
+
+        store.save("tenant-a", tenantASpan);
+        store.save("tenant-b", tenantBSpan);
+
+        assertThat(store.findByTraceIds(
+                "tenant-a",
+                Set.of("shared-trace")
+        )).containsExactly(tenantASpan);
+
+        assertThat(store.findByTraceIds(
+                "tenant-b",
+                Set.of("shared-trace")
+        )).containsExactly(tenantBSpan);
+    }
+
 }
