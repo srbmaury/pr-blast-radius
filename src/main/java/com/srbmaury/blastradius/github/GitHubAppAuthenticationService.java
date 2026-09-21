@@ -53,13 +53,13 @@ public class GitHubAppAuthenticationService {
                 .getEpochSecond();
 
         String header =
-                "{"alg":"RS256","typ":"JWT"}";
+                "{\"alg\":\"RS256\",\"typ\":\"JWT\"}";
         String payload =
-                "{"iat":" + issuedAt
-                        + ","exp":" + expiresAt
-                        + ","iss":""
+                "{\"iat\":" + issuedAt
+                        + ",\"exp\":" + expiresAt
+                        + ",\"iss\":\""
                         + escapeJson(clientId)
-                        + ""}";
+                        + "\"}";
 
         String signingInput =
                 base64Url(header.getBytes(
@@ -100,6 +100,6 @@ public class GitHubAppAuthenticationService {
     private String escapeJson(String value) {
         return value
                 .replace("\\", "\\\\")
-                .replace(""", "\\"");
+                .replace("\"", "\\\"");
     }
 }
