@@ -259,6 +259,10 @@ class EvidenceCoverageServiceTest {
                         List.of()
                 ));
 
+        when(traces.analyze("default", "orders-service", Set.of("HTTP POST /orders")))
+                .thenReturn(new TraceCausalityResult(
+                        "orders-service", Set.of("HTTP POST /orders"), 0, 0, List.of()));
+
         var service = new EvidenceCoverageService(
                 postgres,
                 runtime,
@@ -320,6 +324,10 @@ class EvidenceCoverageServiceTest {
                         List.of(),
                         List.of()
                 ));
+
+        when(traces.analyze("default", "orders-service", Set.of("HTTP POST /orders")))
+                .thenReturn(new TraceCausalityResult(
+                        "orders-service", Set.of("HTTP POST /orders"), 0, 0, List.of()));
 
         var service = new EvidenceCoverageService(
                 postgres,
