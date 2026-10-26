@@ -27,7 +27,7 @@ management:
         include: health,info
 
 security:
-  tenant-auth-enabled: ${TENANT_AUTH_ENABLED:false}
+  tenant-auth-enabled: ${TENANT_AUTH_ENABLED:true}
   admin-token: ${ADMIN_TOKEN:}
 
 github:
