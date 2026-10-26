@@ -75,7 +75,7 @@ class EvidenceCoverageServiceTest {
 
         Set<String> endpoints = Set.of("HTTP POST /orders");
 
-        when(runtime.blastRadius("orders-service", 3))
+        when(runtime.blastRadius("default", "orders-service", 3, Set.of()))
                 .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
@@ -83,7 +83,7 @@ class EvidenceCoverageServiceTest {
                         List.of()
                 ));
 
-        when(runtime.directCallers("orders-service"))
+        when(runtime.directCallers("default", "orders-service"))
                 .thenReturn(List.of(new RuntimeDependencyEdge(
                         "checkout-service",
                         "orders-service",
@@ -92,7 +92,7 @@ class EvidenceCoverageServiceTest {
                         Instant.parse("2026-09-21T10:00:00Z")
                 )));
 
-        when(traces.analyze("orders-service", endpoints))
+        when(traces.analyze("default", "orders-service", endpoints))
                 .thenReturn(new TraceCausalityResult(
                         "orders-service",
                         endpoints,
@@ -141,7 +141,7 @@ class EvidenceCoverageServiceTest {
 
         Set<String> endpoints = Set.of("HTTP POST /orders");
 
-        when(runtime.blastRadius("orders-service", 3))
+        when(runtime.blastRadius("default", "orders-service", 3, Set.of()))
                 .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
@@ -149,7 +149,7 @@ class EvidenceCoverageServiceTest {
                         List.of()
                 ));
 
-        when(runtime.directCallers("orders-service"))
+        when(runtime.directCallers("default", "orders-service"))
                 .thenReturn(List.of(new RuntimeDependencyEdge(
                         "checkout-service",
                         "orders-service",
@@ -158,7 +158,7 @@ class EvidenceCoverageServiceTest {
                         Instant.parse("2026-09-21T10:00:00Z")
                 )));
 
-        when(traces.analyze("orders-service", endpoints))
+        when(traces.analyze("default", "orders-service", endpoints))
                 .thenReturn(new TraceCausalityResult(
                         "orders-service",
                         endpoints,
@@ -200,7 +200,7 @@ class EvidenceCoverageServiceTest {
         RuntimeDependencyService runtime = mock(RuntimeDependencyService.class);
         TraceCausalityService traces = mock(TraceCausalityService.class);
 
-        when(runtime.blastRadius("orders-service", 3))
+        when(runtime.blastRadius("default", "orders-service", 3, Set.of()))
                 .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
@@ -251,7 +251,7 @@ class EvidenceCoverageServiceTest {
         TraceCausalityService traces =
                 mock(TraceCausalityService.class);
 
-        when(runtime.blastRadius("orders-service", 3))
+        when(runtime.blastRadius("default", "orders-service", 3, Set.of()))
                 .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
@@ -313,7 +313,7 @@ class EvidenceCoverageServiceTest {
         TraceCausalityService traces =
                 mock(TraceCausalityService.class);
 
-        when(runtime.blastRadius("orders-service", 3))
+        when(runtime.blastRadius("default", "orders-service", 3, Set.of()))
                 .thenReturn(new RuntimeBlastRadius(
                         "orders-service",
                         3,
