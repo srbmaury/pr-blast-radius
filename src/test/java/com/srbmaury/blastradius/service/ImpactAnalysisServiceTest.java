@@ -56,6 +56,7 @@ class ImpactAnalysisServiceTest {
 
         when(database.analyze(changeSet)).thenReturn(List.of());
         when(runtime.analyze(
+                "default",
                 "orders-service",
                 Set.of("HTTP POST /orders")
         )).thenReturn(List.of());
@@ -64,6 +65,7 @@ class ImpactAnalysisServiceTest {
                 List.of(staticCall)
         )).thenReturn(List.of());
         when(coverage.evaluate(
+                "default",
                 changeSet,
                 "orders-service",
                 List.of()
@@ -79,6 +81,7 @@ class ImpactAnalysisServiceTest {
         service.analyze(changeSet, "orders-service");
 
         verify(runtime).analyze(
+                "default",
                 "orders-service",
                 Set.of("HTTP POST /orders")
         );
