@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import javax.sql.DataSource;
@@ -22,8 +22,12 @@ public class DatabaseConfig {
             @Value("${spring.datasource.username}") String username,
             @Value("${spring.datasource.password}") String password
     ) {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        HikariDataSource dataSource = new HikariDataSource();
         dataSource.setDriverClassName("org.postgresql.Driver");
+        dataSource.setPoolName("customer-evidence-pool");
+        dataSource.setMaximumPoolSize(5);
+        dataSource.setMinimumIdle(0);
+        dataSource.setConnectionTimeout(5000);
         dataSource.setUrl(url);
         dataSource.setUsername(username);
         dataSource.setPassword(password);
@@ -45,8 +49,12 @@ public class DatabaseConfig {
             @Value("${metadata.datasource.password}") String password,
             @Value("${metadata.datasource.driver-class-name}") String driverClassName
     ) {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        HikariDataSource dataSource = new HikariDataSource();
         dataSource.setDriverClassName(driverClassName);
+        dataSource.setPoolName("product-metadata-pool");
+        dataSource.setMaximumPoolSize(10);
+        dataSource.setMinimumIdle(0);
+        dataSource.setConnectionTimeout(5000);
         dataSource.setUrl(url);
         dataSource.setUsername(username);
         dataSource.setPassword(password);
