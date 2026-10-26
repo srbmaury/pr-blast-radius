@@ -26,6 +26,7 @@ class RuntimeImpactServiceTest {
         Set<String> changedEndpoints = Set.of("HTTP POST /orders");
 
         when(dependencies.blastRadius(
+                "default",
                 "orders-service",
                 3,
                 changedEndpoints
@@ -58,6 +59,7 @@ class RuntimeImpactServiceTest {
         ));
 
         when(traces.analyze(
+                "default",
                 "orders-service",
                 changedEndpoints
         )).thenReturn(new TraceCausalityResult(
@@ -111,6 +113,7 @@ class RuntimeImpactServiceTest {
         Set<String> changedEndpoints = Set.of("HTTP POST /orders");
 
         when(dependencies.blastRadius(
+                "default",
                 "orders-service",
                 3,
                 changedEndpoints
@@ -128,6 +131,7 @@ class RuntimeImpactServiceTest {
         ));
 
         when(traces.analyze(
+                "default",
                 "orders-service",
                 changedEndpoints
         )).thenReturn(new TraceCausalityResult(
@@ -159,6 +163,7 @@ class RuntimeImpactServiceTest {
         TraceCausalityService traces = mock(TraceCausalityService.class);
 
         when(dependencies.blastRadius(
+                "default",
                 "orders-service",
                 3,
                 Set.of()
@@ -176,6 +181,7 @@ class RuntimeImpactServiceTest {
         ));
 
         when(traces.analyze(
+                "default",
                 "orders-service",
                 Set.of()
         )).thenReturn(new TraceCausalityResult(
