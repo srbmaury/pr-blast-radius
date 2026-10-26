@@ -136,7 +136,7 @@ class TraceSpanStoreTest {
         var tenantASpan = span(
                 "shared-trace",
                 "server-1",
-                "",
+                null,
                 "orders-service",
                 null,
                 "HTTP POST /orders",
@@ -147,7 +147,7 @@ class TraceSpanStoreTest {
         var tenantBSpan = span(
                 "shared-trace",
                 "server-1",
-                "",
+                null,
                 "orders-service",
                 null,
                 "HTTP GET /orders/{id}",
