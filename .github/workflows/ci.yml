@@ -4,7 +4,9 @@ on:
   pull_request:
   push:
     branches:
+      - main
       - feature/**
+      - fix/**
 
 jobs:
   test:
@@ -17,4 +19,4 @@ jobs:
           java-version: "21"
           cache: maven
       - name: Test
-        run: mvn --batch-mode test
+        run: mvn --batch-mode verify
